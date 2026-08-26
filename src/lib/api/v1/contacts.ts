@@ -24,6 +24,7 @@ export interface ApiContact {
   email: string | null;
   company: string | null;
   avatar_url: string | null;
+  ctwa_clid: string | null;
   tags: { id: string; name: string; color: string }[];
   created_at: string;
   updated_at: string;
@@ -51,6 +52,7 @@ export function serializeContact(row: Record<string, unknown>): ApiContact {
     email: (row.email as string | null) ?? null,
     company: (row.company as string | null) ?? null,
     avatar_url: (row.avatar_url as string | null) ?? null,
+    ctwa_clid: (row.ctwa_clid as string | null) ?? null,
     tags: joins
       .map((j) => j.tags)
       .filter((t): t is NonNullable<RawTagJoin['tags']> => t != null)

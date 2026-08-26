@@ -70,6 +70,12 @@ interface WhatsAppMessage {
   button?: { text?: string; payload?: string }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+    referral?: {
+    source_id?: string
+    source_type?: string
+    source_url?: string
+    ctwa_clid?: string
+  }
 }
 
 interface WhatsAppWebhookEntry {
@@ -596,7 +602,8 @@ async function processMessage(
     accountId,
     configOwnerUserId,
     senderPhone,
-    contactName
+    contactName,
+    message.referral
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
@@ -1116,7 +1123,8 @@ async function findOrCreateContact(
   accountId: string,
   configOwnerUserId: string,
   phone: string,
-  name: string
+  name: string,
+  referral?: { ctwa_clid?: string; source_id?: string }
 ): Promise<ContactOutcome | null> {
   // Find an existing contact for this account by phone. The shared
   // helper pre-filters in SQL by the last-8-digit suffix (so we don't
@@ -1152,6 +1160,9 @@ async function findOrCreateContact(
       user_id: configOwnerUserId,
       phone,
       name: name || phone,
+      ctwa_clid: referral?.ctwa_clid ?? null,
+      ctwa_ad_source_id: referral?.source_id ?? null,
+      ctwa_captured_at: referral?.ctwa_clid ? new Date().toISOString() : null,
     })
     .select()
     .single()
