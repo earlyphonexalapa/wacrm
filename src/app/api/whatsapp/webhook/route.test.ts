@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => ({
   runAutomationsForTrigger: vi.fn(),
   dispatchInboundToFlows: vi.fn(),
-  dispatchInboundToAiReply: vi.fn(),
+  scheduleAiAutoReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
   state: {
     // Result the message upsert's .select() resolves to. A genuine insert
@@ -195,8 +195,8 @@ vi.mock('@/lib/automations/engine', () => ({
 vi.mock('@/lib/flows/engine', () => ({
   dispatchInboundToFlows: h.dispatchInboundToFlows,
 }))
-vi.mock('@/lib/ai/auto-reply', () => ({
-  dispatchInboundToAiReply: h.dispatchInboundToAiReply,
+vi.mock('@/lib/ai/inbound-buffer', () => ({
+  scheduleAiAutoReply: h.scheduleAiAutoReply,
 }))
 vi.mock('@/lib/webhooks/deliver', () => ({
   dispatchWebhookEvent: h.dispatchWebhookEvent,
@@ -270,7 +270,7 @@ beforeEach(() => {
     contentType: 'image/jpeg',
   })
   h.dispatchInboundToFlows.mockResolvedValue({ consumed: false })
-  h.dispatchInboundToAiReply.mockResolvedValue(undefined)
+  h.scheduleAiAutoReply.mockReturnValue(undefined)
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
   h.runAutomationsForTrigger.mockImplementation(() => {
     h.state.automationStarted++
@@ -280,6 +280,49 @@ beforeEach(() => {
         resolve()
       }, 0)
     })
+  })
+})
+
+describe('inbound webhook: AI auto-reply dispatch', () => {
+  it('schedules the debounced auto-reply for a plain-text inbound flows did not consume', async () => {
+    await runWebhook()
+
+    expect(h.scheduleAiAutoReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+      }),
+    )
+  })
+
+  it('does not crash when Meta sends a contact with no profile (ad-referral opens)', async () => {
+    const body = {
+      entry: [
+        {
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                metadata: { phone_number_id: 'pn-1' },
+                // No `profile` — Meta omits it for some click-to-WhatsApp
+                // ad referral opens.
+                contacts: [{ wa_id: '15551230000' }],
+                messages: [TEXT_MESSAGE],
+              },
+            },
+          ],
+        },
+      ],
+    }
+    const req = {
+      text: async () => JSON.stringify(body),
+      headers: { get: () => 'sha256=stub' },
+    } as unknown as Request
+    await POST(req)
+    for (const cb of h.state.afterCallbacks) await cb()
+
+    expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.scheduleAiAutoReply).toHaveBeenCalled()
   })
 })
 
@@ -311,7 +354,7 @@ describe('inbound webhook: idempotent insert (#367)', () => {
     expect(h.state.rpcCalls).toHaveLength(0)
     expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
     expect(h.runAutomationsForTrigger).not.toHaveBeenCalled()
-    expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
+    expect(h.scheduleAiAutoReply).not.toHaveBeenCalled()
     expect(h.dispatchWebhookEvent).not.toHaveBeenCalled()
   })
 })
@@ -373,7 +416,7 @@ describe('inbound webhook: template quick-reply buttons (#478)', () => {
     expect(triggers).toContain('interactive_reply')
     // The AI auto-reply must stay out of it — a button tap is not a
     // free-text question.
-    expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
+    expect(h.scheduleAiAutoReply).not.toHaveBeenCalled()
   })
 
   it('falls back to the label when the template button carries no payload', async () => {

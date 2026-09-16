@@ -88,7 +88,10 @@ interface WhatsAppWebhookEntry {
         phone_number_id: string
       }
       contacts?: Array<{
-        profile: { name: string }
+        // Meta omits `profile` for some payload shapes — notably
+        // click-to-WhatsApp ad referrals that open a thread before the
+        // contact has ever shared a push name.
+        profile?: { name: string }
         wa_id: string
       }>
       messages?: WhatsAppMessage[]
@@ -580,7 +583,9 @@ async function handleReaction(
 
 async function processMessage(
   message: WhatsAppMessage,
-  contact: { profile: { name: string }; wa_id: string },
+  // Optional: `value.contacts[i] || value.contacts[0]` at the call site
+  // is undefined when Meta sent an empty/short `contacts` array.
+  contact: { profile?: { name: string }; wa_id: string } | undefined,
   // Tenancy. Resolved from the matched whatsapp_config row; every
   // contact / conversation / message row created downstream is
   // stamped with this so any member of the account can see it.
@@ -595,7 +600,9 @@ async function processMessage(
   mirrorMedia: boolean
 ) {
   const senderPhone = normalizePhone(message.from)
-  const contactName = contact.profile.name
+  // Falls back to the phone number downstream (findOrCreateContact:
+  // `name: name || phone`) when Meta sent no profile at all.
+  const contactName = contact?.profile?.name ?? ''
 
   // Find or create contact
   const contactOutcome = await findOrCreateContact(
