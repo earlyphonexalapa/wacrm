@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, Pencil, RefreshCw, BookOpen } from 'lucide-react';
+import {
+  Loader2,
+  Plus,
+  Trash2,
+  Pencil,
+  RefreshCw,
+  BookOpen,
+  ImagePlus,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,11 +24,16 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { useTranslations } from 'next-intl';
+import {
+  uploadAccountMedia,
+  MEDIA_MAX_BYTES_BY_KIND,
+} from '@/lib/storage/upload-media';
 
 interface DocSummary {
   id: string;
   title: string;
   updated_at: string;
+  media_url?: string | null;
 }
 
 /** Editor target: 'new' when creating, a doc id when editing, null when closed. */
@@ -39,9 +53,13 @@ export function AiKnowledgeCard({
   const [editing, setEditing] = useState<EditTarget>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaType, setMediaType] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const loadedAccountIdRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const t = useTranslations('Settings.aiKnowledge');
 
   const fetchDocs = useCallback(async () => {
@@ -68,6 +86,8 @@ export function AiKnowledgeCard({
     setEditing('new');
     setTitle('');
     setContent('');
+    setMediaUrl('');
+    setMediaType('');
   };
 
   const openEdit = async (id: string) => {
@@ -81,6 +101,8 @@ export function AiKnowledgeCard({
       setEditing(id);
       setTitle(data.title ?? '');
       setContent(data.content ?? '');
+      setMediaUrl(data.media_url ?? '');
+      setMediaType(data.media_type ?? '');
     } catch {
       toast.error(t('openFailed'));
     }
@@ -90,6 +112,34 @@ export function AiKnowledgeCard({
     setEditing(null);
     setTitle('');
     setContent('');
+    setMediaUrl('');
+    setMediaType('');
+  };
+
+  const pickImage = () => fileInputRef.current?.click();
+
+  const onImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file later
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error(t('imageTypeInvalid'));
+      return;
+    }
+    if (file.size > MEDIA_MAX_BYTES_BY_KIND.image) {
+      toast.error(t('imageTooLarge'));
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const { publicUrl } = await uploadAccountMedia('chat-media', file);
+      setMediaUrl(publicUrl);
+      setMediaType(file.type);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('imageUploadFailed'));
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const save = async () => {
@@ -105,7 +155,12 @@ export function AiKnowledgeCard({
         {
           method: isNew ? 'POST' : 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: title.trim(), content: content.trim() }),
+          body: JSON.stringify({
+            title: title.trim(),
+            content: content.trim(),
+            media_url: mediaUrl,
+            media_type: mediaType,
+          }),
         },
       );
       const data = await res.json();
@@ -189,7 +244,13 @@ export function AiKnowledgeCard({
                     key={doc.id}
                     className="flex items-center justify-between gap-2 px-3 py-2"
                   >
-                    <span className="min-w-0 truncate text-sm text-foreground">
+                    <span className="flex min-w-0 items-center gap-1.5 truncate text-sm text-foreground">
+                      {doc.media_url && (
+                        <ImagePlus
+                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                          aria-label={t('hasImage')}
+                        />
+                      )}
                       {doc.title}
                     </span>
                     {canEdit && (
@@ -242,11 +303,59 @@ export function AiKnowledgeCard({
                     disabled={saving}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>{t('editDocImage')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('editDocImageHint')}</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => void onImageSelected(e)}
+                  />
+                  {mediaUrl ? (
+                    <div className="relative inline-block">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a local asset */}
+                      <img
+                        src={mediaUrl}
+                        alt=""
+                        className="h-24 w-24 rounded-md border border-border object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMediaUrl('');
+                          setMediaType('');
+                        }}
+                        disabled={saving}
+                        className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-destructive-foreground"
+                        title={t('removeImage')}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={pickImage}
+                      disabled={saving || uploadingImage}
+                    >
+                      {uploadingImage ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <ImagePlus className="mr-2 h-4 w-4" />
+                      )}
+                      {t('addImage')}
+                    </Button>
+                  )}
+                </div>
                 <div className="flex justify-end gap-2">
                   <Button variant="ghost" onClick={cancelEdit} disabled={saving}>
                     {t('cancel')}
                   </Button>
-                  <Button onClick={save} disabled={saving}>
+                  <Button onClick={save} disabled={saving || uploadingImage}>
                     {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {t('saveDoc')}
                   </Button>

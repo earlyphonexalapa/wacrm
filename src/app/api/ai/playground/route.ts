@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadAiConfig } from '@/lib/ai/config'
-import { retrieveKnowledge } from '@/lib/ai/knowledge'
+import { retrieveKnowledge, findKnowledgeMedia } from '@/lib/ai/knowledge'
+import { loadTagRules, extractTagSentinel, matchTagRule } from '@/lib/ai/tagging'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
@@ -72,20 +73,39 @@ export async function POST(request: Request) {
       )
     }
 
-    const knowledge = await retrieveKnowledge(
-      supabase,
-      accountId,
-      config,
-      latestUserMessage(messages),
-    )
+    const lastCustomerText = latestUserMessage(messages)
+    const knowledge = await retrieveKnowledge(supabase, accountId, config, lastCustomerText)
+    // Mirrors the real bot's behavior (see dispatchInboundToAiReply) so the
+    // Playground shows what a customer would actually receive, including
+    // any image the knowledge base would attach.
+    const media = await findKnowledgeMedia(supabase, accountId, lastCustomerText)
+    const tagRules = await loadTagRules(supabase, accountId)
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      tagRules,
     })
 
-    const { text, handoff } = await generateReply({ config, systemPrompt, messages })
-    return NextResponse.json({ reply: text, handoff })
+    const { text: rawReplyText, handoff } = await generateReply({
+      config,
+      systemPrompt,
+      messages,
+    })
+    const { text, rawTag } = extractTagSentinel(rawReplyText)
+    const matchedTag = matchTagRule(tagRules, rawTag)
+    const attachedMedia =
+      !handoff && text && media?.mimeType.startsWith('image/')
+        ? { url: media.url, mimeType: media.mimeType }
+        : null
+    return NextResponse.json({
+      reply: text,
+      handoff,
+      media: attachedMedia,
+      // Playground never writes to a real contact — this just shows
+      // what tag the bot WOULD apply on a live conversation.
+      tag: matchedTag?.tagName ?? null,
+    })
   } catch (err) {
     if (err instanceof AiError) {
       return NextResponse.json(

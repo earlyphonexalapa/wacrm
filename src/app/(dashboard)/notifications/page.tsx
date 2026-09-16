@@ -5,16 +5,16 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import type { Notification } from "@/types";
-import { Bell, CheckCheck, Loader2, UserPlus } from "lucide-react";
+import { Bell, CheckCheck, Loader2, UserPlus, Bot } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-// Icon per notification type. Only one type exists today
-// (conversation_assigned) but this keeps future types a one-line add.
+// Icon per notification type.
 const TYPE_ICON: Record<Notification["type"], typeof Bell> = {
   conversation_assigned: UserPlus,
+  ai_handoff: Bot,
 };
 
 export default function NotificationsPage() {
@@ -203,6 +203,10 @@ export default function NotificationsPage() {
           {notifications.map((n) => {
             const Icon = TYPE_ICON[n.type] ?? Bell;
             const isUnread = !n.read_at;
+            // AI handoffs mean a human needs to step in — keep them visually
+            // distinct (amber) from a routine reassignment even once read,
+            // so they don't blend into ordinary teammate activity.
+            const isUrgent = n.type === "ai_handoff";
             return (
               <li key={n.id}>
                 <button
@@ -210,22 +214,28 @@ export default function NotificationsPage() {
                   onClick={() => handleClick(n)}
                   className={cn(
                     "flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors",
-                    isUnread
-                      ? "border-primary/30 bg-primary/5 hover:border-primary/50"
-                      : "border-border bg-card hover:border-border/70",
+                    isUrgent
+                      ? "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/50"
+                      : isUnread
+                        ? "border-primary/30 bg-primary/5 hover:border-primary/50"
+                        : "border-border bg-card hover:border-border/70",
                   )}
                 >
                   <div
                     className={cn(
                       "flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg",
-                      isUnread ? "bg-primary/15" : "bg-muted",
+                      isUrgent ? "bg-amber-500/15" : isUnread ? "bg-primary/15" : "bg-muted",
                     )}
                     aria-hidden
                   >
                     <Icon
                       className={cn(
                         "h-5 w-5",
-                        isUnread ? "text-primary" : "text-muted-foreground",
+                        isUrgent
+                          ? "text-amber-500"
+                          : isUnread
+                            ? "text-primary"
+                            : "text-muted-foreground",
                       )}
                     />
                   </div>

@@ -19,7 +19,7 @@ export async function GET() {
     const { supabase, accountId } = await getCurrentAccount()
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, updated_at')
+      .select('id, title, updated_at, media_url')
       .eq('account_id', accountId)
       .order('updated_at', { ascending: false })
     if (error) {
@@ -50,6 +50,11 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     const title = typeof body?.title === 'string' ? body.title.trim() : ''
     const content = typeof body?.content === 'string' ? body.content.trim() : ''
+    // Optional image attachment — uploaded client-side to the `chat-media`
+    // bucket first; this just records the resulting URL. Both null when
+    // the document is text-only.
+    const mediaUrl = typeof body?.media_url === 'string' ? body.media_url.trim() : null
+    const mediaType = typeof body?.media_type === 'string' ? body.media_type.trim() : null
     if (!title || !content) {
       return NextResponse.json(
         { error: 'title and content are required' },
@@ -59,7 +64,14 @@ export async function POST(request: Request) {
 
     const { data: doc, error } = await supabase
       .from('ai_knowledge_documents')
-      .insert({ account_id: accountId, created_by: userId, title, content })
+      .insert({
+        account_id: accountId,
+        created_by: userId,
+        title,
+        content,
+        media_url: mediaUrl || null,
+        media_type: mediaUrl ? mediaType : null,
+      })
       .select('id')
       .single()
     if (error || !doc) {

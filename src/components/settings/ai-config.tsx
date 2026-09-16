@@ -26,6 +26,8 @@ import {
 } from '@/components/ui/select';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
+import { AiTagRulesCard } from './ai-tag-rules';
+import { AiReactivateIdleCard } from './ai-reactivate-idle';
 import { AI_PROVIDER_DEFAULT_MODEL } from '@/lib/ai/defaults';
 import type { AiProvider } from '@/lib/ai/types';
 import type { AccountMember } from '@/types';
@@ -495,6 +497,10 @@ export function AiConfig() {
               : hasStoredEmbeddingsKey
           }
         />
+
+        <AiTagRulesCard accountId={accountId} canEdit={canEdit} />
+
+        {configured && <AiReactivateIdleCard canEdit={canEdit} />}
 
         <div className="flex items-center justify-between">
           {configured ? (

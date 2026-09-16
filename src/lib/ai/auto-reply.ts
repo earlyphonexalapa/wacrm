@@ -1,14 +1,17 @@
 import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
-import { retrieveKnowledge } from './knowledge'
+import { retrieveKnowledge, findKnowledgeMedia } from './knowledge'
+import { loadTagRules, extractTagSentinel, matchTagRule } from './tagging'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
-import { engineSendText } from '@/lib/flows/meta-send'
+import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { addContactTagAndDispatch } from '@/lib/contacts/tag-events'
+import { notifyHandoffNeedsHuman } from './handoff-notify'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -99,24 +102,34 @@ export async function dispatchInboundToAiReply(
     }
 
     // Ground the reply in the account's knowledge base (best-effort).
-    const knowledge = await retrieveKnowledge(
-      db,
-      accountId,
-      config,
-      latestUserMessage(messages),
-    )
+    const lastCustomerText = latestUserMessage(messages)
+    const knowledge = await retrieveKnowledge(db, accountId, config, lastCustomerText)
+
+    // A knowledge-base document can carry an image (e.g. a price list or
+    // course flyer) — find the best match now, alongside the text
+    // grounding above, so it's ready to attach once the reply is sent.
+    const media = await findKnowledgeMedia(db, accountId, lastCustomerText)
+
+    // Lead-qualification tags the bot may apply this turn (e.g.
+    // "Calificado" / "No calificado") — admin-authored via Setup.
+    const tagRules = await loadTagRules(db, accountId)
 
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      tagRules,
     })
 
-    const { text, handoff, usage } = await generateReply({
+    const { text: rawReplyText, handoff, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
     })
+    // Strip the tag marker before anything downstream sees `text` — the
+    // customer must never receive it, and the handoff-empty check below
+    // must not be confused by a reply that was ONLY a tag marker.
+    const { text, rawTag } = extractTagSentinel(rawReplyText)
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
@@ -131,6 +144,25 @@ export async function dispatchInboundToAiReply(
       model: config.model,
       usage,
     })
+
+    // Apply any lead-qualification tag the model classified, regardless
+    // of whether this turn also hands off — classifying the lead is
+    // useful either way, and `addContactTagAndDispatch` is a safe no-op
+    // when the contact already has it.
+    const matchedTag = matchTagRule(tagRules, rawTag)
+    if (matchedTag) {
+      try {
+        await addContactTagAndDispatch({
+          db,
+          accountId,
+          contactId,
+          tagId: matchedTag.tagId,
+          context: { conversation_id: conversationId },
+        })
+      } catch (err) {
+        console.error('[ai auto-reply] tag assignment failed:', err)
+      }
+    }
 
     if (handoff || !text) {
       // The model can't (or shouldn't) answer — stop auto-replying on
@@ -150,10 +182,24 @@ export async function dispatchInboundToAiReply(
       }
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.
-      if (config.handoffAgentId && !conv.assigned_agent_id) {
+      const willAssign = Boolean(config.handoffAgentId && !conv.assigned_agent_id)
+      if (willAssign) {
         update.assigned_agent_id = config.handoffAgentId
       }
       await db.from('conversations').update(update).eq('id', conversationId)
+
+      // `assigned_agent_id` changing is what makes the notification
+      // trigger fire for a configured handoff agent. With no handoff
+      // agent configured, the conversation just sits in the shared
+      // queue — nobody would otherwise be told a human is needed.
+      if (!willAssign && !conv.assigned_agent_id) {
+        await notifyHandoffNeedsHuman(db, {
+          accountId,
+          conversationId,
+          contactId,
+          summary,
+        })
+      }
       return
     }
 
@@ -187,6 +233,26 @@ export async function dispatchInboundToAiReply(
       text,
       aiGenerated: true,
     })
+
+    // Attach the matched image as a follow-up message. Best-effort and
+    // isolated from the text send above: a broken image URL or a Meta
+    // rejection must not undo (or get confused with) the reply the
+    // customer already received.
+    if (media && media.mimeType.startsWith('image/')) {
+      try {
+        await engineSendMedia({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId,
+          contactId,
+          kind: 'image',
+          link: media.url,
+          aiGenerated: true,
+        })
+      } catch (err) {
+        console.error('[ai auto-reply] knowledge image send failed:', err)
+      }
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }

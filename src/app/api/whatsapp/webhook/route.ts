@@ -9,7 +9,7 @@ import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
-import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { scheduleAiAutoReply } from '@/lib/ai/inbound-buffer'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   handleTemplateWebhookChange,
@@ -868,11 +868,13 @@ async function processMessage(
 
   // AI auto-reply. Runs only for plain-text inbound the deterministic
   // flow runner did NOT consume (flows win over the LLM), and only when
-  // the account has enabled it. Awaited inside `after()` (same reason as
-  // the webhook dispatch below); `dispatchInboundToAiReply` owns its
-  // eligibility gates + try/catch and never throws.
+  // the account has enabled it. Scheduled (not awaited/dispatched
+  // immediately) so a customer sending several bubbles in a row — "hola",
+  // "informacion del curso", "porfavor" — gets ONE reply to the whole
+  // thought instead of one disjointed reply per bubble; see
+  // `scheduleAiAutoReply` for how the debounce works.
   if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
-    await dispatchInboundToAiReply({
+    scheduleAiAutoReply({
       accountId,
       conversationId: conversation.id,
       contactId: contactRecord.id,

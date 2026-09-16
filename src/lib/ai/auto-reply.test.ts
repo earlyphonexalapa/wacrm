@@ -6,8 +6,13 @@ const h = vi.hoisted(() => ({
   loadAiConfig: vi.fn(),
   buildConversationContext: vi.fn(),
   retrieveKnowledge: vi.fn(),
+  findKnowledgeMedia: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
+  engineSendMedia: vi.fn(),
+  loadTagRules: vi.fn(),
+  addContactTagAndDispatch: vi.fn(),
+  notifyHandoffNeedsHuman: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -19,9 +24,25 @@ const h = vi.hoisted(() => ({
 
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
-vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
+vi.mock('./knowledge', () => ({
+  retrieveKnowledge: h.retrieveKnowledge,
+  findKnowledgeMedia: h.findKnowledgeMedia,
+}))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
-vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/flows/meta-send', () => ({
+  engineSendText: h.engineSendText,
+  engineSendMedia: h.engineSendMedia,
+}))
+vi.mock('./tagging', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./tagging')>()
+  return { ...actual, loadTagRules: h.loadTagRules }
+})
+vi.mock('@/lib/contacts/tag-events', () => ({
+  addContactTagAndDispatch: h.addContactTagAndDispatch,
+}))
+vi.mock('./handoff-notify', () => ({
+  notifyHandoffNeedsHuman: h.notifyHandoffNeedsHuman,
+}))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
@@ -94,8 +115,13 @@ beforeEach(() => {
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
+  h.findKnowledgeMedia.mockResolvedValue(null)
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
+  h.engineSendMedia.mockResolvedValue({ whatsapp_message_id: 'm2' })
+  h.loadTagRules.mockResolvedValue([])
+  h.addContactTagAndDispatch.mockResolvedValue({ added: true, dispatched: true })
+  h.notifyHandoffNeedsHuman.mockResolvedValue(undefined)
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {
@@ -186,6 +212,54 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
   })
 })
 
+describe('dispatchInboundToAiReply — knowledge-base image attachment', () => {
+  it('sends the matched image after the text reply', async () => {
+    h.findKnowledgeMedia.mockResolvedValue({
+      url: 'https://example.com/price-list.png',
+      mimeType: 'image/png',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalled()
+    expect(h.engineSendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        kind: 'image',
+        link: 'https://example.com/price-list.png',
+        aiGenerated: true,
+      }),
+    )
+  })
+
+  it('does not send anything for a non-image mime type', async () => {
+    h.findKnowledgeMedia.mockResolvedValue({
+      url: 'https://example.com/brochure.pdf',
+      mimeType: 'application/pdf',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+  })
+
+  it('does not attach an image on handoff', async () => {
+    h.findKnowledgeMedia.mockResolvedValue({
+      url: 'https://example.com/price-list.png',
+      mimeType: 'image/png',
+    })
+    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+  })
+
+  it('still sends the text reply when the image send fails', async () => {
+    h.findKnowledgeMedia.mockResolvedValue({
+      url: 'https://example.com/price-list.png',
+      mimeType: 'image/png',
+    })
+    h.engineSendMedia.mockRejectedValue(new Error('meta rejected the url'))
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+    expect(h.engineSendText).toHaveBeenCalled()
+  })
+})
+
 describe('dispatchInboundToAiReply — handoff', () => {
   it('disables auto-reply, writes a summary, and does not send on handoff', async () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
@@ -208,5 +282,90 @@ describe('dispatchInboundToAiReply — handoff', () => {
       ai_autoreply_disabled: true,
       assigned_agent_id: 'agent-7',
     })
+  })
+
+  it('alerts every admin when no handoff agent is configured', async () => {
+    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.notifyHandoffNeedsHuman).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        accountId: 'acct-1',
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+      }),
+    )
+  })
+
+  it('does not fall back to the admin alert when a handoff agent is configured', async () => {
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'agent-7' }))
+    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.notifyHandoffNeedsHuman).not.toHaveBeenCalled()
+  })
+})
+
+describe('dispatchInboundToAiReply — lead-qualification tagging', () => {
+  const RULES = [
+    { tagId: 'tag-1', tagName: 'Calificado', description: 'Ready to buy' },
+    { tagId: 'tag-2', tagName: 'No calificado', description: 'Just browsing' },
+  ]
+
+  it('applies the matched tag and strips the marker from the sent text', async () => {
+    h.loadTagRules.mockResolvedValue(RULES)
+    h.generateReply.mockResolvedValue({
+      text: 'Gracias por tu interés! [[TAG: Calificado]]',
+      handoff: false,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.addContactTagAndDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: 'contact-1', tagId: 'tag-1' }),
+    )
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Gracias por tu interés!' }),
+    )
+  })
+
+  it('ignores a tag name that is not in the configured rules', async () => {
+    h.loadTagRules.mockResolvedValue(RULES)
+    h.generateReply.mockResolvedValue({
+      text: 'Reply text [[TAG: Made Up Tag]]',
+      handoff: false,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.addContactTagAndDispatch).not.toHaveBeenCalled()
+  })
+
+  it('applies the tag even when the same turn hands off', async () => {
+    h.loadTagRules.mockResolvedValue(RULES)
+    h.generateReply.mockResolvedValue({
+      text: '[[TAG: No calificado]]',
+      handoff: true,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.addContactTagAndDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ tagId: 'tag-2' }),
+    )
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('still sends the reply when tag assignment fails', async () => {
+    h.loadTagRules.mockResolvedValue(RULES)
+    h.addContactTagAndDispatch.mockRejectedValue(new Error('db error'))
+    h.generateReply.mockResolvedValue({
+      text: 'Reply text [[TAG: Calificado]]',
+      handoff: false,
+    })
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+    expect(h.engineSendText).toHaveBeenCalled()
+  })
+
+  it('does nothing when no rules are configured', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'Reply text [[TAG: Calificado]]',
+      handoff: false,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.addContactTagAndDispatch).not.toHaveBeenCalled()
   })
 })

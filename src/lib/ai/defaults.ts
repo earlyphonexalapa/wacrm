@@ -1,4 +1,5 @@
 import type { AiProvider } from './types'
+import { buildTagRulesPrompt, type TagRule } from './tagging'
 
 // ============================================================
 // Tunables + prompt scaffold for the AI reply assistant.
@@ -54,8 +55,10 @@ export function buildSystemPrompt(args: {
   mode: 'draft' | 'auto_reply'
   /** Knowledge-base excerpts retrieved for the current question. */
   knowledge?: string[]
+  /** Lead-qualification tags the bot may apply (auto-reply mode only). */
+  tagRules?: TagRule[]
 }): string {
-  const { userPrompt, mode, knowledge } = args
+  const { userPrompt, mode, knowledge, tagRules } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -70,6 +73,9 @@ export function buildSystemPrompt(args: {
     parts.push(
       `You are replying automatically with no human in the loop. If you cannot confidently and safely help — the customer explicitly asks for a human, is upset or complaining, or the request needs information you do not have — reply with exactly ${HANDOFF_SENTINEL} and nothing else. A human agent will then take over. Prefer handing off over guessing.`,
     )
+
+    const tagPrompt = buildTagRulesPrompt(tagRules ?? [])
+    if (tagPrompt) parts.push(tagPrompt)
   }
 
   if (userPrompt && userPrompt.trim()) {

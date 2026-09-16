@@ -14,6 +14,12 @@ interface MatchRow {
   content: string
 }
 
+export interface KnowledgeMediaMatch {
+  /** `chat-media` bucket URL (or any public URL Meta can fetch). */
+  url: string
+  mimeType: string
+}
+
 /**
  * (Re)build the chunks for one document. Deletes the document's
  * existing chunks, re-chunks the content, and — when the account has an
@@ -146,4 +152,83 @@ export async function retrieveKnowledge(
   }
 
   return Array.from(picked.values()).slice(0, k)
+}
+
+/**
+ * Find the single best knowledge-base image match for `queryText`, so
+ * the auto-reply bot can attach it alongside its text reply (e.g. the
+ * customer asks "cuánto cuesta" and a "Price list" document has a photo
+ * attached).
+ *
+ * Lexical-only (full-text search), not semantic: this is a bonus
+ * attachment, not the primary grounding, and skipping the embeddings
+ * call keeps it free and instant even on accounts with an embeddings
+ * key configured. Business owners write the document's text as the
+ * trigger description ("Price list for the course"), so FTS matching
+ * against the customer's own words is enough.
+ *
+ * Best-effort: any failure (no image-backed documents, RPC error)
+ * returns null rather than throwing — a missing image must never break
+ * the text reply.
+ */
+export async function findKnowledgeMedia(
+  db: SupabaseClient,
+  accountId: string,
+  queryText: string,
+): Promise<KnowledgeMediaMatch | null> {
+  const query = queryText.trim()
+  if (!query) return null
+
+  try {
+    // Cheap early-out: most accounts have zero image-backed documents,
+    // and this skips the RPC + two follow-up lookups below entirely.
+    const { count, error: countErr } = await db
+      .from('ai_knowledge_documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+      .not('media_url', 'is', null)
+    if (countErr || !count) return null
+
+    const { data: hits, error: rpcErr } = await db.rpc('match_ai_knowledge_fts', {
+      p_account_id: accountId,
+      p_query: query,
+      p_match_count: 5,
+    })
+    if (rpcErr || !Array.isArray(hits) || hits.length === 0) return null
+
+    const chunkIds = (hits as MatchRow[]).map((h) => h.id)
+    const { data: chunks, error: chunksErr } = await db
+      .from('ai_knowledge_chunks')
+      .select('id, document_id')
+      .in('id', chunkIds)
+    if (chunksErr || !chunks || chunks.length === 0) return null
+    const docIdByChunk = new Map<string, string>(
+      (chunks as { id: string; document_id: string }[]).map((c) => [c.id, c.document_id]),
+    )
+
+    const docIds = Array.from(new Set(docIdByChunk.values()))
+    const { data: docs, error: docsErr } = await db
+      .from('ai_knowledge_documents')
+      .select('id, media_url, media_type')
+      .in('id', docIds)
+      .not('media_url', 'is', null)
+    if (docsErr || !docs || docs.length === 0) return null
+    const mediaByDoc = new Map(
+      (docs as { id: string; media_url: string; media_type: string | null }[]).map(
+        (d) => [d.id, d],
+      ),
+    )
+
+    // Walk the ranked chunk ids in order — the first one whose document
+    // carries an image is the best-ranked image match.
+    for (const chunkId of chunkIds) {
+      const docId = docIdByChunk.get(chunkId)
+      const doc = docId ? mediaByDoc.get(docId) : undefined
+      if (doc) return { url: doc.media_url, mimeType: doc.media_type ?? '' }
+    }
+    return null
+  } catch (err) {
+    console.error('[ai knowledge] media match failed:', err)
+    return null
+  }
 }

@@ -1736,7 +1736,52 @@
       "addDoc": "Add document",
       "reindex": "Reindex",
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
-      "loading": "Loading…"
+      "loading": "Loading…",
+      "editDocImage": "Image (optional)",
+      "editDocImageHint": "The bot sends this image alongside its reply whenever this document is the best match for what the customer asked.",
+      "addImage": "Add image",
+      "removeImage": "Remove image",
+      "hasImage": "Has an image attachment",
+      "imageTypeInvalid": "Please choose an image file.",
+      "imageTooLarge": "Image is too large (max 5 MB).",
+      "imageUploadFailed": "Failed to upload the image."
+    },
+    "aiReactivateIdle": {
+      "title": "Reactivate idle conversations",
+      "description": "Bulk-clear the human assignment and any prior handoff on conversations that have gone quiet, so the bot can pick them back up. Handy right after turning auto-reply on, when older contacts are still assigned to whoever answered them manually.",
+      "idleDaysOption": "{count, plural, one {No activity for # day} other {No activity for # days}}",
+      "checkButton": "Check",
+      "noPermission": "Only admins can run this.",
+      "noneFound": "No idle conversations found.",
+      "checkFailed": "Failed to check idle conversations.",
+      "applyFailed": "Failed to reactivate conversations.",
+      "applySuccess": "{count, plural, one {Reactivated AI on # conversation.} other {Reactivated AI on # conversations.}}",
+      "confirmTitle": "Reactivate AI on idle conversations?",
+      "confirmDesc": "{count, plural, one {# conversation has} other {# conversations have}} had no activity for at least {days, plural, one {# day} other {# days}}. This will unassign any human agent, clear any prior handoff, and let the bot reply again.",
+      "cancel": "Cancel",
+      "confirmButton": "{count, plural, one {Reactivate # conversation} other {Reactivate # conversations}}"
+    },
+    "aiTagRules": {
+      "title": "Auto-tagging",
+      "description": "Let the bot classify a lead by applying one of your existing tags once it has enough information (e.g. \"Calificado\" / \"No calificado\"). Create the tag itself under Settings → Tags first, then describe here when the bot should use it.",
+      "loading": "Loading…",
+      "loadFailed": "Failed to load tagging rules",
+      "noRules": "No tagging rules yet.",
+      "unknownTag": "Unknown tag",
+      "addRule": "Add rule",
+      "tagLabel": "Tag",
+      "tagPlaceholder": "Choose a tag",
+      "noTagsLeft": "Every tag already has a rule.",
+      "noTagsAtAll": "You don't have any tags yet — create one under Settings → Tags first.",
+      "descriptionLabel": "When should the bot apply it?",
+      "descriptionPlaceholder": "e.g. The customer showed real buying intent, budget, and urgency.",
+      "cancel": "Cancel",
+      "saveRule": "Save rule",
+      "tagDescriptionRequired": "Choose a tag and describe when to use it.",
+      "saveSuccess": "Tagging rule saved.",
+      "saveFailed": "Failed to save the rule.",
+      "removeSuccess": "Rule removed.",
+      "removeFailed": "Failed to remove the rule."
     }
   }
 }

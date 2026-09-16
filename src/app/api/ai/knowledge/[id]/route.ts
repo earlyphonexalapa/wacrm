@@ -20,7 +20,7 @@ export async function GET(_request: Request, { params }: Params) {
     const { id } = await params
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, content, updated_at')
+      .select('id, title, content, updated_at, media_url, media_type')
       .eq('account_id', accountId)
       .eq('id', id)
       .maybeSingle()
@@ -49,7 +49,12 @@ export async function PATCH(request: Request, { params }: Params) {
     const body = await request.json().catch(() => null)
     const title = typeof body?.title === 'string' ? body.title.trim() : undefined
     const content = typeof body?.content === 'string' ? body.content.trim() : undefined
-    if (title === undefined && content === undefined) {
+    // Undefined = "leave as-is"; empty string = "remove the image".
+    const mediaUrl =
+      typeof body?.media_url === 'string' ? body.media_url.trim() : undefined
+    const mediaType =
+      typeof body?.media_type === 'string' ? body.media_type.trim() : undefined
+    if (title === undefined && content === undefined && mediaUrl === undefined) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
     }
     if (title !== undefined && !title) {
@@ -59,9 +64,13 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: 'content cannot be empty' }, { status: 400 })
     }
 
-    const update: Record<string, string> = {}
+    const update: Record<string, string | null> = {}
     if (title !== undefined) update.title = title
     if (content !== undefined) update.content = content
+    if (mediaUrl !== undefined) {
+      update.media_url = mediaUrl || null
+      update.media_type = mediaUrl ? (mediaType ?? null) : null
+    }
 
     const { data: updated, error } = await supabase
       .from('ai_knowledge_documents')

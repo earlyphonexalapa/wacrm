@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Bot, RotateCcw, Send, Loader2, UserCircle2, ArrowRight } from 'lucide-react';
+import { Bot, RotateCcw, Send, Loader2, UserCircle2, ArrowRight, Tag as TagIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -11,6 +11,10 @@ interface Turn {
   content: string;
   /** assistant-only: the agent signalled a human handoff on this turn. */
   handoff?: boolean;
+  /** assistant-only: a knowledge-base image the bot would send alongside this reply. */
+  media?: { url: string; mimeType: string } | null;
+  /** assistant-only: the tag the bot would apply to this contact. */
+  tag?: string | null;
 }
 
 export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
@@ -61,6 +65,8 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
               ? data.reply
               : '',
           handoff: Boolean(data.handoff),
+          media: data.media ?? null,
+          tag: data.tag ?? null,
         },
       ]);
     } catch {
@@ -144,11 +150,33 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
               )}
             >
               {t.content && <p className="whitespace-pre-wrap">{t.content}</p>}
+              {t.role === 'assistant' && t.media && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={t.media.url}
+                  alt="Knowledge base attachment"
+                  className={cn(
+                    'max-w-full rounded-lg',
+                    t.content && 'mt-1.5',
+                  )}
+                />
+              )}
+              {t.role === 'assistant' && t.tag && (
+                <p
+                  className={cn(
+                    'flex items-center gap-1 text-xs text-primary',
+                    (t.content || t.media) && 'mt-1.5 border-t border-border/50 pt-1.5',
+                  )}
+                >
+                  <TagIcon className="h-3.5 w-3.5" />
+                  Would tag this contact &quot;{t.tag}&quot;
+                </p>
+              )}
               {t.role === 'assistant' && t.handoff && (
                 <p
                   className={cn(
                     'flex items-center gap-1 text-xs text-amber-500',
-                    t.content && 'mt-1.5 border-t border-border/50 pt-1.5',
+                    (t.content || t.media || t.tag) && 'mt-1.5 border-t border-border/50 pt-1.5',
                   )}
                 >
                   <UserCircle2 className="h-3.5 w-3.5" />
