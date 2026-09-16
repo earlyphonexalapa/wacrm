@@ -30,6 +30,7 @@ describe('serializeContact', () => {
       email: null,
       company: 'Acme',
       avatar_url: null,
+      ctwa_clid: null,
       tags: [{ id: 't1', name: 'vip', color: '#fff' }],
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-02T00:00:00Z',
