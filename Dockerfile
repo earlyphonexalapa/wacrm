@@ -5,6 +5,13 @@
 # ---------------------------------------------------------------
 FROM node:20-alpine AS deps
 WORKDIR /app
+# node:20-alpine ships an old npm (10.8.2) whose `npm ci` has a known
+# false-positive on this lockfile — it reports peer-resolved packages
+# like @swc/helpers as "missing from lock file" even though a newer npm
+# (11.x, what generated/validates this lockfile locally) reads the same
+# file fine. Upgrading npm before `ci` avoids re-pinning any dependency
+# version just to work around the older npm's bug.
+RUN npm install -g npm@11
 COPY package.json package-lock.json ./
 RUN npm ci
 
