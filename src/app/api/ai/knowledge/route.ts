@@ -6,7 +6,12 @@ import {
 } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadEmbeddingsKey } from '@/lib/ai/config'
-import { ingestDocument } from '@/lib/ai/knowledge'
+import {
+  ingestDocument,
+  parseKnowledgeMediaInput,
+  replaceKnowledgeMedia,
+  MAX_KNOWLEDGE_MEDIA_ITEMS,
+} from '@/lib/ai/knowledge'
 import { AiError } from '@/lib/ai/types'
 
 /**
@@ -19,7 +24,7 @@ export async function GET() {
     const { supabase, accountId } = await getCurrentAccount()
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, updated_at, media_url')
+      .select('id, title, updated_at, ai_knowledge_media(media_url)')
       .eq('account_id', accountId)
       .order('updated_at', { ascending: false })
     if (error) {
@@ -29,7 +34,15 @@ export async function GET() {
         { status: 500 },
       )
     }
-    return NextResponse.json({ documents: data ?? [] })
+    // Flatten the joined rows into a plain count so the list view can
+    // show a "has attachments" badge without shipping every URL.
+    const documents = (data ?? []).map((doc) => {
+      const { ai_knowledge_media, ...rest } = doc as typeof doc & {
+        ai_knowledge_media: { media_url: string }[] | null
+      }
+      return { ...rest, media_count: ai_knowledge_media?.length ?? 0 }
+    })
+    return NextResponse.json({ documents })
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -50,11 +63,6 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     const title = typeof body?.title === 'string' ? body.title.trim() : ''
     const content = typeof body?.content === 'string' ? body.content.trim() : ''
-    // Optional image attachment — uploaded client-side to the `chat-media`
-    // bucket first; this just records the resulting URL. Both null when
-    // the document is text-only.
-    const mediaUrl = typeof body?.media_url === 'string' ? body.media_url.trim() : null
-    const mediaType = typeof body?.media_type === 'string' ? body.media_type.trim() : null
     if (!title || !content) {
       return NextResponse.json(
         { error: 'title and content are required' },
@@ -62,16 +70,20 @@ export async function POST(request: Request) {
       )
     }
 
+    // Optional attachments (images and/or PDFs) — each uploaded
+    // client-side to the `chat-media` bucket first; this just records
+    // the resulting URLs. Omitted `media` = no attachments.
+    const mediaItems = parseKnowledgeMediaInput(body?.media ?? [])
+    if (mediaItems === null) {
+      return NextResponse.json(
+        { error: `media must be an array of up to ${MAX_KNOWLEDGE_MEDIA_ITEMS} images/PDFs` },
+        { status: 400 },
+      )
+    }
+
     const { data: doc, error } = await supabase
       .from('ai_knowledge_documents')
-      .insert({
-        account_id: accountId,
-        created_by: userId,
-        title,
-        content,
-        media_url: mediaUrl || null,
-        media_type: mediaUrl ? mediaType : null,
-      })
+      .insert({ account_id: accountId, created_by: userId, title, content })
       .select('id')
       .single()
     if (error || !doc) {
@@ -80,6 +92,18 @@ export async function POST(request: Request) {
         { error: 'Failed to save document' },
         { status: 500 },
       )
+    }
+
+    if (mediaItems.length > 0) {
+      try {
+        await replaceKnowledgeMedia(supabase, accountId, doc.id, mediaItems)
+      } catch (err) {
+        console.error('[ai/knowledge POST] media insert error:', err)
+        return NextResponse.json(
+          { success: true, id: doc.id, warning: 'Saved, but attachments failed to save.' },
+          { status: 200 },
+        )
+      }
     }
 
     const { key: embeddingsApiKey, corrupt } = await loadEmbeddingsKey(

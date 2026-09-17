@@ -10,6 +10,8 @@ import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
+import { basenameFromUrl } from '@/lib/media/filename'
+import type { MediaKind } from '@/lib/whatsapp/meta-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events'
 import { notifyHandoffNeedsHuman } from './handoff-notify'
@@ -72,6 +74,14 @@ async function performHandoff(
 function isRetryable(err: unknown): boolean {
   if (!(err instanceof AiError)) return true
   return err.code !== 'invalid_key' && err.code !== 'unsupported_provider'
+}
+
+/** Knowledge-base attachments are restricted to images and PDFs — see
+ *  the upload validation in the /api/ai/knowledge routes. */
+function mediaKindForMime(mimeType: string): MediaKind | null {
+  if (mimeType.startsWith('image/')) return 'image'
+  if (mimeType === 'application/pdf') return 'document'
+  return null
 }
 
 /**
@@ -338,23 +348,28 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    // Attach the matched image as a follow-up message. Best-effort and
-    // isolated from the text send above: a broken image URL or a Meta
-    // rejection must not undo (or get confused with) the reply the
-    // customer already received.
-    if (media && media.mimeType.startsWith('image/')) {
+    // Attach the matched knowledge-base files (up to
+    // MAX_KNOWLEDGE_MEDIA_ITEMS images/PDFs, in upload order) as
+    // follow-up messages. Best-effort and isolated from the text send
+    // above and from each other: one broken URL or Meta rejection must
+    // not undo the reply the customer already received, nor stop the
+    // rest of the batch from going out.
+    for (const item of media) {
+      const kind = mediaKindForMime(item.mimeType)
+      if (!kind) continue
       try {
         await engineSendMedia({
           accountId,
           userId: configOwnerUserId,
           conversationId,
           contactId,
-          kind: 'image',
-          link: media.url,
+          kind,
+          link: item.url,
+          ...(kind === 'document' ? { filename: basenameFromUrl(item.url) } : {}),
           aiGenerated: true,
         })
       } catch (err) {
-        console.error('[ai auto-reply] knowledge image send failed:', err)
+        console.error('[ai auto-reply] knowledge media send failed:', err)
       }
     }
   } catch (err) {

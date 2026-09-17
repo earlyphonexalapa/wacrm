@@ -7,7 +7,12 @@ vi.mock('./embeddings', () => ({
   toVectorLiteral: (v: number[]) => `[${v.join(',')}]`,
 }))
 
-import { retrieveKnowledge, ingestDocument } from './knowledge'
+import {
+  retrieveKnowledge,
+  ingestDocument,
+  parseKnowledgeMediaInput,
+  replaceKnowledgeMedia,
+} from './knowledge'
 
 interface FakeState {
   semantic: { id: string; content: string }[]
@@ -156,5 +161,80 @@ describe('ingestDocument', () => {
     // Chunks were inserted (lexical search works) despite the embed failure…
     expect(state.inserted).toHaveLength(1)
     expect(state.inserted![0].embedding).toBeNull()
+  })
+})
+
+describe('parseKnowledgeMediaInput', () => {
+  it('accepts a mix of images and PDFs, trimming whitespace', () => {
+    const result = parseKnowledgeMediaInput([
+      { url: ' https://x/1.png ', type: ' image/png ' },
+      { url: 'https://x/brochure.pdf', type: 'application/pdf' },
+    ])
+    expect(result).toEqual([
+      { url: 'https://x/1.png', type: 'image/png' },
+      { url: 'https://x/brochure.pdf', type: 'application/pdf' },
+    ])
+  })
+
+  it('returns [] for an empty array', () => {
+    expect(parseKnowledgeMediaInput([])).toEqual([])
+  })
+
+  it('rejects more than MAX_KNOWLEDGE_MEDIA_ITEMS entries', () => {
+    const many = Array.from({ length: 6 }, (_, i) => ({
+      url: `https://x/${i}.png`,
+      type: 'image/png',
+    }))
+    expect(parseKnowledgeMediaInput(many)).toBeNull()
+  })
+
+  it('rejects a type that is neither image nor PDF', () => {
+    expect(
+      parseKnowledgeMediaInput([{ url: 'https://x/1.mp4', type: 'video/mp4' }]),
+    ).toBeNull()
+  })
+
+  it('rejects an entry missing url or type', () => {
+    expect(parseKnowledgeMediaInput([{ url: '', type: 'image/png' }])).toBeNull()
+    expect(parseKnowledgeMediaInput([{ url: 'https://x/1.png' }])).toBeNull()
+  })
+
+  it('rejects a non-array payload', () => {
+    expect(parseKnowledgeMediaInput('not an array')).toBeNull()
+    expect(parseKnowledgeMediaInput(undefined)).toBeNull()
+  })
+})
+
+describe('replaceKnowledgeMedia', () => {
+  it('deletes existing attachments and inserts the new set with position order', async () => {
+    const { db, state } = makeDb()
+    await replaceKnowledgeMedia(db, 'acct', 'doc-1', [
+      { url: 'https://x/1.png', type: 'image/png' },
+      { url: 'https://x/brochure.pdf', type: 'application/pdf' },
+    ])
+    expect(state.deletedFor).toBe('doc-1')
+    expect(state.inserted).toEqual([
+      {
+        document_id: 'doc-1',
+        account_id: 'acct',
+        media_url: 'https://x/1.png',
+        media_type: 'image/png',
+        position: 0,
+      },
+      {
+        document_id: 'doc-1',
+        account_id: 'acct',
+        media_url: 'https://x/brochure.pdf',
+        media_type: 'application/pdf',
+        position: 1,
+      },
+    ])
+  })
+
+  it('only deletes (no insert) when clearing all attachments', async () => {
+    const { db, state } = makeDb()
+    await replaceKnowledgeMedia(db, 'acct', 'doc-1', [])
+    expect(state.deletedFor).toBe('doc-1')
+    expect(state.inserted).toBeNull()
   })
 })

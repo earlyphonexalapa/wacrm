@@ -20,6 +20,10 @@ export interface KnowledgeMediaMatch {
   mimeType: string
 }
 
+/** Hard cap on attachments per knowledge-base document — enforced here
+ *  (`.limit()` below) and in the write path (the API route). */
+export const MAX_KNOWLEDGE_MEDIA_ITEMS = 5
+
 /**
  * (Re)build the chunks for one document. Deletes the document's
  * existing chunks, re-chunks the content, and — when the account has an
@@ -76,6 +80,67 @@ export async function ingestDocument(
   if (insErr) throw insErr
 
   if (embedError) throw embedError
+}
+
+export interface KnowledgeMediaInput {
+  url: string
+  type: string
+}
+
+/**
+ * Validate a knowledge-document media payload from a request body: an
+ * array of `{ url, type }`, each an image or a PDF, capped at
+ * `MAX_KNOWLEDGE_MEDIA_ITEMS`. Returns `null` on anything invalid
+ * (wrong shape, too many items, an unsupported type) so the route can
+ * 400 rather than silently drop or truncate what the admin sent.
+ */
+export function parseKnowledgeMediaInput(raw: unknown): KnowledgeMediaInput[] | null {
+  if (!Array.isArray(raw)) return null
+  if (raw.length > MAX_KNOWLEDGE_MEDIA_ITEMS) return null
+
+  const items: KnowledgeMediaInput[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') return null
+    const rawUrl = (entry as Record<string, unknown>).url
+    const rawType = (entry as Record<string, unknown>).type
+    const url = typeof rawUrl === 'string' ? rawUrl.trim() : ''
+    const type = typeof rawType === 'string' ? rawType.trim() : ''
+    if (!url || !type) return null
+    if (!type.startsWith('image/') && type !== 'application/pdf') return null
+    items.push({ url, type })
+  }
+  return items
+}
+
+/**
+ * Replace a document's attachments wholesale (delete-then-insert, same
+ * idempotent-on-retry shape as `ingestDocument`'s chunk rebuild).
+ * `items` order is preserved as `position`, which is what determines
+ * the order the bot sends them in.
+ */
+export async function replaceKnowledgeMedia(
+  db: SupabaseClient,
+  accountId: string,
+  documentId: string,
+  items: KnowledgeMediaInput[],
+): Promise<void> {
+  const { error: delErr } = await db
+    .from('ai_knowledge_media')
+    .delete()
+    .eq('document_id', documentId)
+  if (delErr) throw delErr
+
+  if (items.length === 0) return
+
+  const rows = items.map((item, i) => ({
+    document_id: documentId,
+    account_id: accountId,
+    media_url: item.url,
+    media_type: item.type,
+    position: i,
+  }))
+  const { error: insErr } = await db.from('ai_knowledge_media').insert(rows)
+  if (insErr) throw insErr
 }
 
 /**
@@ -155,80 +220,87 @@ export async function retrieveKnowledge(
 }
 
 /**
- * Find the single best knowledge-base image match for `queryText`, so
- * the auto-reply bot can attach it alongside its text reply (e.g. the
- * customer asks "cuánto cuesta" and a "Price list" document has a photo
- * attached).
+ * Find the attachments (images and/or PDFs, up to `MAX_KNOWLEDGE_MEDIA_ITEMS`)
+ * on the best-matching knowledge-base document for `queryText`, so the
+ * auto-reply bot can send them alongside its text reply (e.g. the
+ * customer asks about "referencias de otros alumnos" and a "Prueba
+ * social" document has 5 screenshots attached — sent in the order they
+ * were uploaded).
  *
  * Lexical-only (full-text search), not semantic: this is a bonus
  * attachment, not the primary grounding, and skipping the embeddings
  * call keeps it free and instant even on accounts with an embeddings
  * key configured. Business owners write the document's text as the
- * trigger description ("Price list for the course"), so FTS matching
- * against the customer's own words is enough.
+ * trigger description ("Prueba social — capturas de alumnos"), so FTS
+ * matching against the customer's own words is enough.
  *
- * Best-effort: any failure (no image-backed documents, RPC error)
- * returns null rather than throwing — a missing image must never break
- * the text reply.
+ * Best-effort: any failure (no media-backed documents, RPC error)
+ * returns `[]` rather than throwing — missing attachments must never
+ * break the text reply.
  */
 export async function findKnowledgeMedia(
   db: SupabaseClient,
   accountId: string,
   queryText: string,
-): Promise<KnowledgeMediaMatch | null> {
+): Promise<KnowledgeMediaMatch[]> {
   const query = queryText.trim()
-  if (!query) return null
+  if (!query) return []
 
   try {
-    // Cheap early-out: most accounts have zero image-backed documents,
+    // Cheap early-out: most accounts have zero media-backed documents,
     // and this skips the RPC + two follow-up lookups below entirely.
     const { count, error: countErr } = await db
-      .from('ai_knowledge_documents')
+      .from('ai_knowledge_media')
       .select('id', { count: 'exact', head: true })
       .eq('account_id', accountId)
-      .not('media_url', 'is', null)
-    if (countErr || !count) return null
+    if (countErr || !count) return []
 
     const { data: hits, error: rpcErr } = await db.rpc('match_ai_knowledge_fts', {
       p_account_id: accountId,
       p_query: query,
       p_match_count: 5,
     })
-    if (rpcErr || !Array.isArray(hits) || hits.length === 0) return null
+    if (rpcErr || !Array.isArray(hits) || hits.length === 0) return []
 
     const chunkIds = (hits as MatchRow[]).map((h) => h.id)
     const { data: chunks, error: chunksErr } = await db
       .from('ai_knowledge_chunks')
       .select('id, document_id')
       .in('id', chunkIds)
-    if (chunksErr || !chunks || chunks.length === 0) return null
+    if (chunksErr || !chunks || chunks.length === 0) return []
     const docIdByChunk = new Map<string, string>(
       (chunks as { id: string; document_id: string }[]).map((c) => [c.id, c.document_id]),
     )
 
     const docIds = Array.from(new Set(docIdByChunk.values()))
-    const { data: docs, error: docsErr } = await db
-      .from('ai_knowledge_documents')
-      .select('id, media_url, media_type')
-      .in('id', docIds)
-      .not('media_url', 'is', null)
-    if (docsErr || !docs || docs.length === 0) return null
-    const mediaByDoc = new Map(
-      (docs as { id: string; media_url: string; media_type: string | null }[]).map(
-        (d) => [d.id, d],
-      ),
-    )
+    const { data: mediaRows, error: mediaErr } = await db
+      .from('ai_knowledge_media')
+      .select('document_id, media_url, media_type')
+      .in('document_id', docIds)
+      .order('position', { ascending: true })
+    if (mediaErr || !mediaRows || mediaRows.length === 0) return []
+
+    const mediaByDoc = new Map<string, KnowledgeMediaMatch[]>()
+    for (const row of mediaRows as {
+      document_id: string
+      media_url: string
+      media_type: string
+    }[]) {
+      const list = mediaByDoc.get(row.document_id) ?? []
+      list.push({ url: row.media_url, mimeType: row.media_type })
+      mediaByDoc.set(row.document_id, list)
+    }
 
     // Walk the ranked chunk ids in order — the first one whose document
-    // carries an image is the best-ranked image match.
+    // carries attachments is the best-ranked media match.
     for (const chunkId of chunkIds) {
       const docId = docIdByChunk.get(chunkId)
-      const doc = docId ? mediaByDoc.get(docId) : undefined
-      if (doc) return { url: doc.media_url, mimeType: doc.media_type ?? '' }
+      const items = docId ? mediaByDoc.get(docId) : undefined
+      if (items && items.length > 0) return items.slice(0, MAX_KNOWLEDGE_MEDIA_ITEMS)
     }
-    return null
+    return []
   } catch (err) {
     console.error('[ai knowledge] media match failed:', err)
-    return null
+    return []
   }
 }

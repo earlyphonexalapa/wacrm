@@ -3,19 +3,19 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { findKnowledgeMedia } from './knowledge'
 
 interface FakeState {
-  imageDocCount: number
+  mediaCount: number
   ftsHits: { id: string; content: string }[]
   chunks: { id: string; document_id: string }[]
-  docs: { id: string; media_url: string; media_type: string | null }[]
+  mediaRows: { document_id: string; media_url: string; media_type: string }[]
   rpcCalls: string[]
 }
 
 function makeDb(overrides: Partial<FakeState> = {}) {
   const state: FakeState = {
-    imageDocCount: 1,
+    mediaCount: 1,
     ftsHits: [],
     chunks: [],
-    docs: [],
+    mediaRows: [],
     rpcCalls: [],
     ...overrides,
   }
@@ -29,23 +29,17 @@ function makeDb(overrides: Partial<FakeState> = {}) {
       return Promise.resolve({ data: null, error: null })
     },
     from: (table: string) => {
-      if (table === 'ai_knowledge_documents') {
+      if (table === 'ai_knowledge_media') {
         return {
           select: (cols: string) => {
-            // The count-only early-out uses select(..., { count, head: true })
-            // followed by .eq().not(); the follow-up media lookup uses
-            // select().in().not(). Distinguish by whether `docs` is queried.
+            // Cheap-early-out count: select('id', {count, head:true}).eq(...)
             if (cols === 'id') {
-              return {
-                eq: () => ({
-                  not: () =>
-                    Promise.resolve({ count: state.imageDocCount, error: null }),
-                }),
-              }
+              return { eq: () => Promise.resolve({ count: state.mediaCount, error: null }) }
             }
+            // Full lookup: select('document_id, media_url, media_type').in().order()
             return {
               in: () => ({
-                not: () => Promise.resolve({ data: state.docs, error: null }),
+                order: () => Promise.resolve({ data: state.mediaRows, error: null }),
               }),
             }
           },
@@ -65,61 +59,65 @@ function makeDb(overrides: Partial<FakeState> = {}) {
 }
 
 describe('findKnowledgeMedia', () => {
-  it('returns null for an empty query without touching the DB', async () => {
+  it('returns [] for an empty query without touching the DB', async () => {
     const { db, state } = makeDb()
-    expect(await findKnowledgeMedia(db, 'acct', '   ')).toBeNull()
+    expect(await findKnowledgeMedia(db, 'acct', '   ')).toEqual([])
     expect(state.rpcCalls).toEqual([])
   })
 
-  it('short-circuits when the account has no image-backed documents', async () => {
-    const { db, state } = makeDb({ imageDocCount: 0 })
-    expect(await findKnowledgeMedia(db, 'acct', 'cuanto cuesta')).toBeNull()
+  it('short-circuits when the account has no media-backed documents', async () => {
+    const { db, state } = makeDb({ mediaCount: 0 })
+    expect(await findKnowledgeMedia(db, 'acct', 'cuanto cuesta')).toEqual([])
     expect(state.rpcCalls).toEqual([])
   })
 
-  it('returns null when nothing matches the query', async () => {
+  it('returns [] when nothing matches the query', async () => {
     const { db } = makeDb({ ftsHits: [] })
-    expect(await findKnowledgeMedia(db, 'acct', 'cuanto cuesta')).toBeNull()
+    expect(await findKnowledgeMedia(db, 'acct', 'cuanto cuesta')).toEqual([])
   })
 
-  it('returns the image for the best-ranked matching document', async () => {
+  it('returns every attachment of the best-ranked matching document, in position order', async () => {
     const { db } = makeDb({
-      ftsHits: [
-        { id: 'chunk-1', content: 'Price list text' },
-        { id: 'chunk-2', content: 'Unrelated FAQ' },
+      ftsHits: [{ id: 'chunk-1', content: 'Prueba social' }],
+      chunks: [{ id: 'chunk-1', document_id: 'doc-1' }],
+      mediaRows: [
+        { document_id: 'doc-1', media_url: 'https://x/1.png', media_type: 'image/png' },
+        { document_id: 'doc-1', media_url: 'https://x/2.png', media_type: 'image/png' },
+        { document_id: 'doc-1', media_url: 'https://x/brochure.pdf', media_type: 'application/pdf' },
       ],
-      chunks: [
-        { id: 'chunk-1', document_id: 'doc-1' },
-        { id: 'chunk-2', document_id: 'doc-2' },
-      ],
-      docs: [{ id: 'doc-1', media_url: 'https://x/price.png', media_type: 'image/png' }],
     })
-    const result = await findKnowledgeMedia(db, 'acct', 'cuanto cuesta')
-    expect(result).toEqual({ url: 'https://x/price.png', mimeType: 'image/png' })
+    const result = await findKnowledgeMedia(db, 'acct', 'referencias de alumnos')
+    expect(result).toEqual([
+      { url: 'https://x/1.png', mimeType: 'image/png' },
+      { url: 'https://x/2.png', mimeType: 'image/png' },
+      { url: 'https://x/brochure.pdf', mimeType: 'application/pdf' },
+    ])
   })
 
-  it('skips a top match with no image and falls through to the next ranked one', async () => {
+  it('skips a top match with no attachments and falls through to the next ranked one', async () => {
     const { db } = makeDb({
       ftsHits: [
         { id: 'chunk-1', content: 'Text-only FAQ' },
-        { id: 'chunk-2', content: 'Price list text' },
+        { id: 'chunk-2', content: 'Prueba social' },
       ],
       chunks: [
         { id: 'chunk-1', document_id: 'doc-1' },
         { id: 'chunk-2', document_id: 'doc-2' },
       ],
-      docs: [{ id: 'doc-2', media_url: 'https://x/price.png', media_type: 'image/png' }],
+      mediaRows: [
+        { document_id: 'doc-2', media_url: 'https://x/1.png', media_type: 'image/png' },
+      ],
     })
-    const result = await findKnowledgeMedia(db, 'acct', 'cuanto cuesta')
-    expect(result).toEqual({ url: 'https://x/price.png', mimeType: 'image/png' })
+    const result = await findKnowledgeMedia(db, 'acct', 'referencias')
+    expect(result).toEqual([{ url: 'https://x/1.png', mimeType: 'image/png' }])
   })
 
-  it('returns null when no ranked document has an image', async () => {
+  it('returns [] when no ranked document has attachments', async () => {
     const { db } = makeDb({
       ftsHits: [{ id: 'chunk-1', content: 'Text-only FAQ' }],
       chunks: [{ id: 'chunk-1', document_id: 'doc-1' }],
-      docs: [],
+      mediaRows: [],
     })
-    expect(await findKnowledgeMedia(db, 'acct', 'q')).toBeNull()
+    expect(await findKnowledgeMedia(db, 'acct', 'q')).toEqual([])
   })
 })

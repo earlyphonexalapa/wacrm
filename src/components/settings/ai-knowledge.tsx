@@ -10,6 +10,8 @@ import {
   RefreshCw,
   BookOpen,
   ImagePlus,
+  FileText,
+  Paperclip,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -29,15 +31,27 @@ import {
   MEDIA_MAX_BYTES_BY_KIND,
 } from '@/lib/storage/upload-media';
 
+/** Mirrors MAX_KNOWLEDGE_MEDIA_ITEMS in src/lib/ai/knowledge.ts. */
+const MAX_MEDIA_ITEMS = 5;
+
+interface MediaItem {
+  url: string;
+  type: string;
+}
+
 interface DocSummary {
   id: string;
   title: string;
   updated_at: string;
-  media_url?: string | null;
+  media_count?: number;
 }
 
 /** Editor target: 'new' when creating, a doc id when editing, null when closed. */
 type EditTarget = 'new' | string | null;
+
+function isImage(type: string): boolean {
+  return type.startsWith('image/');
+}
 
 export function AiKnowledgeCard({
   accountId,
@@ -53,9 +67,8 @@ export function AiKnowledgeCard({
   const [editing, setEditing] = useState<EditTarget>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [mediaUrl, setMediaUrl] = useState('');
-  const [mediaType, setMediaType] = useState('');
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const loadedAccountIdRef = useRef<string | null>(null);
@@ -86,8 +99,7 @@ export function AiKnowledgeCard({
     setEditing('new');
     setTitle('');
     setContent('');
-    setMediaUrl('');
-    setMediaType('');
+    setMediaItems([]);
   };
 
   const openEdit = async (id: string) => {
@@ -101,8 +113,7 @@ export function AiKnowledgeCard({
       setEditing(id);
       setTitle(data.title ?? '');
       setContent(data.content ?? '');
-      setMediaUrl(data.media_url ?? '');
-      setMediaType(data.media_type ?? '');
+      setMediaItems(Array.isArray(data.media) ? data.media : []);
     } catch {
       toast.error(t('openFailed'));
     }
@@ -112,34 +123,56 @@ export function AiKnowledgeCard({
     setEditing(null);
     setTitle('');
     setContent('');
-    setMediaUrl('');
-    setMediaType('');
+    setMediaItems([]);
   };
 
-  const pickImage = () => fileInputRef.current?.click();
+  const pickFiles = () => fileInputRef.current?.click();
 
-  const onImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // allow re-picking the same file later
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error(t('imageTypeInvalid'));
+  const onFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ''; // allow re-picking the same file(s) later
+    if (files.length === 0) return;
+
+    const remaining = MAX_MEDIA_ITEMS - mediaItems.length;
+    if (remaining <= 0) {
+      toast.error(t('maxItemsReached', { max: MAX_MEDIA_ITEMS }));
       return;
     }
-    if (file.size > MEDIA_MAX_BYTES_BY_KIND.image) {
-      toast.error(t('imageTooLarge'));
-      return;
+    const toUpload = files.slice(0, remaining);
+    if (files.length > toUpload.length) {
+      toast.warning(t('maxItemsTrimmed', { max: MAX_MEDIA_ITEMS }));
     }
-    setUploadingImage(true);
+
+    setUploadingMedia(true);
     try {
-      const { publicUrl } = await uploadAccountMedia('chat-media', file);
-      setMediaUrl(publicUrl);
-      setMediaType(file.type);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('imageUploadFailed'));
+      for (const file of toUpload) {
+        const image = file.type.startsWith('image/');
+        const pdf = file.type === 'application/pdf';
+        if (!image && !pdf) {
+          toast.error(t('fileTypeInvalid', { name: file.name }));
+          continue;
+        }
+        const limit = image
+          ? MEDIA_MAX_BYTES_BY_KIND.image
+          : MEDIA_MAX_BYTES_BY_KIND.document;
+        if (file.size > limit) {
+          toast.error(t('fileTooLarge', { name: file.name }));
+          continue;
+        }
+        try {
+          const { publicUrl } = await uploadAccountMedia('chat-media', file);
+          setMediaItems((prev) => [...prev, { url: publicUrl, type: file.type }]);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : t('fileUploadFailed'));
+        }
+      }
     } finally {
-      setUploadingImage(false);
+      setUploadingMedia(false);
     }
+  };
+
+  const removeMediaItem = (index: number) => {
+    setMediaItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const save = async () => {
@@ -158,8 +191,7 @@ export function AiKnowledgeCard({
           body: JSON.stringify({
             title: title.trim(),
             content: content.trim(),
-            media_url: mediaUrl,
-            media_type: mediaType,
+            media: mediaItems,
           }),
         },
       );
@@ -245,10 +277,10 @@ export function AiKnowledgeCard({
                     className="flex items-center justify-between gap-2 px-3 py-2"
                   >
                     <span className="flex min-w-0 items-center gap-1.5 truncate text-sm text-foreground">
-                      {doc.media_url && (
-                        <ImagePlus
+                      {Boolean(doc.media_count) && (
+                        <Paperclip
                           className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                          aria-label={t('hasImage')}
+                          aria-label={t('hasAttachments', { count: doc.media_count ?? 0 })}
                         />
                       )}
                       {doc.title}
@@ -304,50 +336,66 @@ export function AiKnowledgeCard({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>{t('editDocImage')}</Label>
-                  <p className="text-xs text-muted-foreground">{t('editDocImageHint')}</p>
+                  <Label>{t('editDocMedia')}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('editDocMediaHint', { max: MAX_MEDIA_ITEMS })}
+                  </p>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,application/pdf"
+                    multiple
                     className="hidden"
-                    onChange={(e) => void onImageSelected(e)}
+                    onChange={(e) => void onFilesSelected(e)}
                   />
-                  {mediaUrl ? (
-                    <div className="relative inline-block">
-                      {/* eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a local asset */}
-                      <img
-                        src={mediaUrl}
-                        alt=""
-                        className="h-24 w-24 rounded-md border border-border object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMediaUrl('');
-                          setMediaType('');
-                        }}
-                        disabled={saving}
-                        className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-destructive-foreground"
-                        title={t('removeImage')}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+
+                  {mediaItems.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {mediaItems.map((item, i) => (
+                        <div key={i} className="relative">
+                          {isImage(item.type) ? (
+                            /* eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a local asset */
+                            <img
+                              src={item.url}
+                              alt=""
+                              className="h-20 w-20 rounded-md border border-border object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border border-border bg-muted px-1 text-center">
+                              <FileText className="h-6 w-6 text-muted-foreground" />
+                              <span className="w-full truncate text-[10px] text-muted-foreground">
+                                PDF
+                              </span>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeMediaItem(i)}
+                            disabled={saving}
+                            className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-destructive-foreground"
+                            title={t('removeItem')}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ) : (
+                  )}
+
+                  {mediaItems.length < MAX_MEDIA_ITEMS && (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={pickImage}
-                      disabled={saving || uploadingImage}
+                      onClick={pickFiles}
+                      disabled={saving || uploadingMedia}
                     >
-                      {uploadingImage ? (
+                      {uploadingMedia ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
                         <ImagePlus className="mr-2 h-4 w-4" />
                       )}
-                      {t('addImage')}
+                      {t('addFiles')} ({mediaItems.length}/{MAX_MEDIA_ITEMS})
                     </Button>
                   )}
                 </div>
@@ -355,7 +403,7 @@ export function AiKnowledgeCard({
                   <Button variant="ghost" onClick={cancelEdit} disabled={saving}>
                     {t('cancel')}
                   </Button>
-                  <Button onClick={save} disabled={saving || uploadingImage}>
+                  <Button onClick={save} disabled={saving || uploadingMedia}>
                     {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {t('saveDoc')}
                   </Button>

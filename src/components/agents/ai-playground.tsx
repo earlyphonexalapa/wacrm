@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Bot, RotateCcw, Send, Loader2, UserCircle2, ArrowRight, Tag as TagIcon } from 'lucide-react';
+import { Bot, RotateCcw, Send, Loader2, UserCircle2, ArrowRight, Tag as TagIcon, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -11,8 +11,8 @@ interface Turn {
   content: string;
   /** assistant-only: the agent signalled a human handoff on this turn. */
   handoff?: boolean;
-  /** assistant-only: a knowledge-base image the bot would send alongside this reply. */
-  media?: { url: string; mimeType: string } | null;
+  /** assistant-only: knowledge-base attachments (images/PDFs) the bot would send alongside this reply. */
+  media?: { url: string; mimeType: string }[];
   /** assistant-only: the tag the bot would apply to this contact. */
   tag?: string | null;
 }
@@ -65,7 +65,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
               ? data.reply
               : '',
           handoff: Boolean(data.handoff),
-          media: data.media ?? null,
+          media: Array.isArray(data.media) ? data.media : [],
           tag: data.tag ?? null,
         },
       ]);
@@ -150,22 +150,42 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
               )}
             >
               {t.content && <p className="whitespace-pre-wrap">{t.content}</p>}
-              {t.role === 'assistant' && t.media && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={t.media.url}
-                  alt="Knowledge base attachment"
+              {t.role === 'assistant' && t.media && t.media.length > 0 && (
+                <div
                   className={cn(
-                    'max-w-full rounded-lg',
+                    'flex flex-wrap gap-1.5',
                     t.content && 'mt-1.5',
                   )}
-                />
+                >
+                  {t.media.map((m, mi) =>
+                    m.mimeType.startsWith('image/') ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={mi}
+                        src={m.url}
+                        alt="Knowledge base attachment"
+                        className="h-20 w-20 rounded-lg object-cover"
+                      />
+                    ) : (
+                      <a
+                        key={mi}
+                        href={m.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 rounded-lg bg-background/60 px-2.5 py-2 text-xs underline-offset-2 hover:underline"
+                      >
+                        <FileText className="h-3.5 w-3.5 shrink-0" /> PDF
+                      </a>
+                    ),
+                  )}
+                </div>
               )}
               {t.role === 'assistant' && t.tag && (
                 <p
                   className={cn(
                     'flex items-center gap-1 text-xs text-primary',
-                    (t.content || t.media) && 'mt-1.5 border-t border-border/50 pt-1.5',
+                    (t.content || (t.media && t.media.length > 0)) &&
+                      'mt-1.5 border-t border-border/50 pt-1.5',
                   )}
                 >
                   <TagIcon className="h-3.5 w-3.5" />
@@ -176,7 +196,8 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
                 <p
                   className={cn(
                     'flex items-center gap-1 text-xs text-amber-500',
-                    (t.content || t.media || t.tag) && 'mt-1.5 border-t border-border/50 pt-1.5',
+                    (t.content || (t.media && t.media.length > 0) || t.tag) &&
+                      'mt-1.5 border-t border-border/50 pt-1.5',
                   )}
                 >
                   <UserCircle2 className="h-3.5 w-3.5" />

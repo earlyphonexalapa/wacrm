@@ -6,7 +6,12 @@ import {
 } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadEmbeddingsKey } from '@/lib/ai/config'
-import { ingestDocument } from '@/lib/ai/knowledge'
+import {
+  ingestDocument,
+  parseKnowledgeMediaInput,
+  replaceKnowledgeMedia,
+  MAX_KNOWLEDGE_MEDIA_ITEMS,
+} from '@/lib/ai/knowledge'
 import { AiError } from '@/lib/ai/types'
 
 type Params = { params: Promise<{ id: string }> }
@@ -20,7 +25,7 @@ export async function GET(_request: Request, { params }: Params) {
     const { id } = await params
     const { data, error } = await supabase
       .from('ai_knowledge_documents')
-      .select('id, title, content, updated_at, media_url, media_type')
+      .select('id, title, content, updated_at, ai_knowledge_media(media_url, media_type, position)')
       .eq('account_id', accountId)
       .eq('id', id)
       .maybeSingle()
@@ -29,7 +34,14 @@ export async function GET(_request: Request, { params }: Params) {
       return NextResponse.json({ error: 'Failed to load document' }, { status: 500 })
     }
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return NextResponse.json(data)
+
+    const { ai_knowledge_media, ...rest } = data as typeof data & {
+      ai_knowledge_media: { media_url: string; media_type: string; position: number }[] | null
+    }
+    const media = (ai_knowledge_media ?? [])
+      .sort((a, b) => a.position - b.position)
+      .map((m) => ({ url: m.media_url, type: m.media_type }))
+    return NextResponse.json({ ...rest, media })
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -49,12 +61,17 @@ export async function PATCH(request: Request, { params }: Params) {
     const body = await request.json().catch(() => null)
     const title = typeof body?.title === 'string' ? body.title.trim() : undefined
     const content = typeof body?.content === 'string' ? body.content.trim() : undefined
-    // Undefined = "leave as-is"; empty string = "remove the image".
-    const mediaUrl =
-      typeof body?.media_url === 'string' ? body.media_url.trim() : undefined
-    const mediaType =
-      typeof body?.media_type === 'string' ? body.media_type.trim() : undefined
-    if (title === undefined && content === undefined && mediaUrl === undefined) {
+    // Undefined = "leave attachments as-is"; an array (even []) replaces
+    // the whole set — that's what the editor always sends.
+    const mediaProvided = body?.media !== undefined
+    const mediaItems = mediaProvided ? parseKnowledgeMediaInput(body.media) : []
+    if (mediaProvided && mediaItems === null) {
+      return NextResponse.json(
+        { error: `media must be an array of up to ${MAX_KNOWLEDGE_MEDIA_ITEMS} images/PDFs` },
+        { status: 400 },
+      )
+    }
+    if (title === undefined && content === undefined && !mediaProvided) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
     }
     if (title !== undefined && !title) {
@@ -64,26 +81,44 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: 'content cannot be empty' }, { status: 400 })
     }
 
-    const update: Record<string, string | null> = {}
+    const update: Record<string, string> = {}
     if (title !== undefined) update.title = title
     if (content !== undefined) update.content = content
-    if (mediaUrl !== undefined) {
-      update.media_url = mediaUrl || null
-      update.media_type = mediaUrl ? (mediaType ?? null) : null
-    }
 
-    const { data: updated, error } = await supabase
-      .from('ai_knowledge_documents')
-      .update(update)
-      .eq('account_id', accountId)
-      .eq('id', id)
-      .select('id')
-      .maybeSingle()
+    // An empty update (media-only PATCH) would otherwise send PostgREST
+    // a SET with no columns — look the row up instead of updating it.
+    const { data: updated, error } =
+      Object.keys(update).length > 0
+        ? await supabase
+            .from('ai_knowledge_documents')
+            .update(update)
+            .eq('account_id', accountId)
+            .eq('id', id)
+            .select('id')
+            .maybeSingle()
+        : await supabase
+            .from('ai_knowledge_documents')
+            .select('id')
+            .eq('account_id', accountId)
+            .eq('id', id)
+            .maybeSingle()
     if (error) {
       console.error('[ai/knowledge/[id] PATCH] error:', error)
       return NextResponse.json({ error: 'Failed to update document' }, { status: 500 })
     }
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (mediaProvided) {
+      try {
+        await replaceKnowledgeMedia(supabase, accountId, id, mediaItems ?? [])
+      } catch (err) {
+        console.error('[ai/knowledge/[id] PATCH] media replace error:', err)
+        return NextResponse.json(
+          { success: true, warning: 'Updated, but attachments failed to save.' },
+          { status: 200 },
+        )
+      }
+    }
 
     if (content !== undefined) {
       const { key: embeddingsApiKey, corrupt } = await loadEmbeddingsKey(

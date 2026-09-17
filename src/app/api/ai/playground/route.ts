@@ -95,9 +95,9 @@ export async function POST(request: Request) {
     const { text, rawTag } = extractTagSentinel(rawReplyText)
     const matchedTag = matchTagRule(tagRules, rawTag)
     const attachedMedia =
-      !handoff && text && media?.mimeType.startsWith('image/')
-        ? { url: media.url, mimeType: media.mimeType }
-        : null
+      !handoff && text
+        ? media.map((m) => ({ url: m.url, mimeType: m.mimeType }))
+        : []
     return NextResponse.json({
       reply: text,
       handoff,

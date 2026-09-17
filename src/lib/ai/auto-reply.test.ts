@@ -121,7 +121,7 @@ beforeEach(() => {
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
-  h.findKnowledgeMedia.mockResolvedValue(null)
+  h.findKnowledgeMedia.mockResolvedValue([])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
   h.engineSendMedia.mockResolvedValue({ whatsapp_message_id: 'm2' })
@@ -245,12 +245,11 @@ describe('dispatchInboundToAiReply — typing indicator', () => {
   })
 })
 
-describe('dispatchInboundToAiReply — knowledge-base image attachment', () => {
-  it('sends the matched image after the text reply', async () => {
-    h.findKnowledgeMedia.mockResolvedValue({
-      url: 'https://example.com/price-list.png',
-      mimeType: 'image/png',
-    })
+describe('dispatchInboundToAiReply — knowledge-base media attachments', () => {
+  it('sends a single matched image after the text reply', async () => {
+    h.findKnowledgeMedia.mockResolvedValue([
+      { url: 'https://example.com/price-list.png', mimeType: 'image/png' },
+    ])
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).toHaveBeenCalled()
     expect(h.engineSendMedia).toHaveBeenCalledWith(
@@ -263,33 +262,55 @@ describe('dispatchInboundToAiReply — knowledge-base image attachment', () => {
     )
   })
 
-  it('does not send anything for a non-image mime type', async () => {
-    h.findKnowledgeMedia.mockResolvedValue({
-      url: 'https://example.com/brochure.pdf',
-      mimeType: 'application/pdf',
+  it('sends up to 5 mixed images/PDFs in order', async () => {
+    h.findKnowledgeMedia.mockResolvedValue([
+      { url: 'https://example.com/1.png', mimeType: 'image/png' },
+      { url: 'https://example.com/2.png', mimeType: 'image/jpeg' },
+      { url: 'https://example.com/brochure.pdf', mimeType: 'application/pdf' },
+    ])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendMedia).toHaveBeenCalledTimes(3)
+    expect(h.engineSendMedia.mock.calls[0][0]).toMatchObject({
+      kind: 'image',
+      link: 'https://example.com/1.png',
     })
+    expect(h.engineSendMedia.mock.calls[1][0]).toMatchObject({
+      kind: 'image',
+      link: 'https://example.com/2.png',
+    })
+    expect(h.engineSendMedia.mock.calls[2][0]).toMatchObject({
+      kind: 'document',
+      link: 'https://example.com/brochure.pdf',
+      filename: 'brochure.pdf',
+    })
+  })
+
+  it('does not send anything for an unsupported mime type', async () => {
+    h.findKnowledgeMedia.mockResolvedValue([
+      { url: 'https://example.com/clip.mp4', mimeType: 'video/mp4' },
+    ])
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendMedia).not.toHaveBeenCalled()
   })
 
-  it('does not attach an image on handoff', async () => {
-    h.findKnowledgeMedia.mockResolvedValue({
-      url: 'https://example.com/price-list.png',
-      mimeType: 'image/png',
-    })
+  it('does not attach anything on handoff', async () => {
+    h.findKnowledgeMedia.mockResolvedValue([
+      { url: 'https://example.com/price-list.png', mimeType: 'image/png' },
+    ])
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendMedia).not.toHaveBeenCalled()
   })
 
-  it('still sends the text reply when the image send fails', async () => {
-    h.findKnowledgeMedia.mockResolvedValue({
-      url: 'https://example.com/price-list.png',
-      mimeType: 'image/png',
-    })
-    h.engineSendMedia.mockRejectedValue(new Error('meta rejected the url'))
+  it('still sends the text reply and the rest of the batch when one item fails', async () => {
+    h.findKnowledgeMedia.mockResolvedValue([
+      { url: 'https://example.com/1.png', mimeType: 'image/png' },
+      { url: 'https://example.com/2.png', mimeType: 'image/png' },
+    ])
+    h.engineSendMedia.mockRejectedValueOnce(new Error('meta rejected the url'))
     await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
     expect(h.engineSendText).toHaveBeenCalled()
+    expect(h.engineSendMedia).toHaveBeenCalledTimes(2) // kept going after the first failure
   })
 })
 
