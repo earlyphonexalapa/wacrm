@@ -251,6 +251,10 @@ export async function engineSendMedia(
     sender_type: 'bot',
     content_type: args.kind,
     content_text: args.caption ?? null,
+    // Without this the row has no media_url at all, so the inbox
+    // (and WhatsApp's own delivery, which is unaffected — Meta already
+    // has the link from the send call above) renders "Photo unavailable".
+    media_url: args.link,
     message_id: waMessageId,
     status: 'sent',
     ai_generated: args.aiGenerated ?? false,
