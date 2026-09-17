@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
@@ -13,6 +14,7 @@ import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events'
 import { notifyHandoffNeedsHuman } from './handoff-notify'
 import { showTypingIndicator } from './typing'
+import { AiError, type GenerateResult } from './types'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -22,6 +24,54 @@ interface DispatchArgs {
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
+}
+
+/**
+ * Disable auto-reply on this conversation and route it to a human —
+ * shared by every failure path below (the model choosing to bail, the
+ * provider call failing, the slot claim failing, the WhatsApp send
+ * failing) so a customer is never left stranded with no human ever
+ * finding out. See `notifyHandoffNeedsHuman` for why the "no handoff
+ * agent configured" branch matters — without it, a technical failure on
+ * an account using the shared queue would leave both the bot AND the
+ * notification silent.
+ */
+async function performHandoff(
+  db: SupabaseClient,
+  args: {
+    accountId: string
+    conversationId: string
+    contactId: string
+    handoffAgentId: string | null
+    alreadyAssigned: boolean
+    summary: string
+  },
+): Promise<void> {
+  const update: Record<string, unknown> = {
+    ai_autoreply_disabled: true,
+    ai_handoff_summary: args.summary,
+  }
+  const willAssign = Boolean(args.handoffAgentId && !args.alreadyAssigned)
+  if (willAssign) {
+    update.assigned_agent_id = args.handoffAgentId
+  }
+  await db.from('conversations').update(update).eq('id', args.conversationId)
+
+  if (!willAssign && !args.alreadyAssigned) {
+    await notifyHandoffNeedsHuman(db, {
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+      contactId: args.contactId,
+      summary: args.summary,
+    })
+  }
+}
+
+/** Provider errors that will fail identically on an immediate retry —
+ *  not worth burning the one retry attempt on. */
+function isRetryable(err: unknown): boolean {
+  if (!(err instanceof AiError)) return true
+  return err.code !== 'invalid_key' && err.code !== 'unsupported_provider'
 }
 
 /**
@@ -127,11 +177,49 @@ export async function dispatchInboundToAiReply(
       tagRules,
     })
 
-    const { text: rawReplyText, handoff, usage } = await generateReply({
-      config,
-      systemPrompt,
-      messages,
-    })
+    let generation: GenerateResult
+    try {
+      generation = await generateReply({ config, systemPrompt, messages })
+    } catch (firstErr) {
+      if (!isRetryable(firstErr)) {
+        console.error('[ai auto-reply] generateReply failed (non-retryable), handing off:', firstErr)
+        await performHandoff(db, {
+          accountId,
+          conversationId,
+          contactId,
+          handoffAgentId: config.handoffAgentId,
+          alreadyAssigned: Boolean(conv.assigned_agent_id),
+          summary: buildHandoffSummary({
+            messages,
+            replyCount: conv.ai_reply_count ?? 0,
+            failureNote: 'invalid AI provider key',
+          }),
+        })
+        return
+      }
+      // One retry for a transient hiccup (timeout, momentary 429/5xx) —
+      // better than permanently stranding the customer on a blip.
+      console.warn('[ai auto-reply] generateReply failed, retrying once:', firstErr)
+      try {
+        generation = await generateReply({ config, systemPrompt, messages })
+      } catch (secondErr) {
+        console.error('[ai auto-reply] generateReply failed twice, handing off:', secondErr)
+        await performHandoff(db, {
+          accountId,
+          conversationId,
+          contactId,
+          handoffAgentId: config.handoffAgentId,
+          alreadyAssigned: Boolean(conv.assigned_agent_id),
+          summary: buildHandoffSummary({
+            messages,
+            replyCount: conv.ai_reply_count ?? 0,
+            failureNote: 'AI provider error',
+          }),
+        })
+        return
+      }
+    }
+    const { text: rawReplyText, handoff, usage } = generation
     // Strip the tag marker before anything downstream sees `text` — the
     // customer must never receive it, and the handoff-empty check below
     // must not be confused by a reply that was ONLY a tag marker.
@@ -172,40 +260,15 @@ export async function dispatchInboundToAiReply(
 
     if (handoff || !text) {
       // The model can't (or shouldn't) answer — stop auto-replying on
-      // this thread and hand it to a human. We (a) pause the bot here
-      // (sticky until re-enabled), (b) route the conversation to the
-      // configured handoff agent — null leaves it in the shared queue —
-      // and (c) leave a short internal note so whoever picks it up has
-      // context. Assigning fires the `on_conversation_assigned` trigger,
-      // which notifies the agent.
-      const summary = buildHandoffSummary({
-        messages,
-        replyCount: conv.ai_reply_count ?? 0,
+      // this thread and hand it to a human.
+      await performHandoff(db, {
+        accountId,
+        conversationId,
+        contactId,
+        handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary: buildHandoffSummary({ messages, replyCount: conv.ai_reply_count ?? 0 }),
       })
-      const update: Record<string, unknown> = {
-        ai_autoreply_disabled: true,
-        ai_handoff_summary: summary,
-      }
-      // Only set the assignee when a target is configured AND the thread
-      // isn't already owned — never stomp an existing human assignment.
-      const willAssign = Boolean(config.handoffAgentId && !conv.assigned_agent_id)
-      if (willAssign) {
-        update.assigned_agent_id = config.handoffAgentId
-      }
-      await db.from('conversations').update(update).eq('id', conversationId)
-
-      // `assigned_agent_id` changing is what makes the notification
-      // trigger fire for a configured handoff agent. With no handoff
-      // agent configured, the conversation just sits in the shared
-      // queue — nobody would otherwise be told a human is needed.
-      if (!willAssign && !conv.assigned_agent_id) {
-        await notifyHandoffNeedsHuman(db, {
-          accountId,
-          conversationId,
-          contactId,
-          summary,
-        })
-      }
       return
     }
 
@@ -224,21 +287,56 @@ export async function dispatchInboundToAiReply(
     if (claimErr) {
       // A real error here (vs. losing the cap race) is almost always a
       // deploy issue — e.g. `claim_ai_reply_slot` not EXECUTE-able by the
-      // service role, or the migration not applied. Log it loudly: a
-      // silent return makes "auto-reply never fires" undiagnosable.
-      console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
+      // service role, or the migration not applied. Hand off instead of
+      // silently dropping this turn — the customer already has a reply
+      // ready, it just couldn't be recorded as sent.
+      console.error('[ai auto-reply] claim_ai_reply_slot failed, handing off:', claimErr)
+      await performHandoff(db, {
+        accountId,
+        conversationId,
+        contactId,
+        handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary: buildHandoffSummary({
+          messages,
+          replyCount: conv.ai_reply_count ?? 0,
+          failureNote: 'internal error claiming a reply slot',
+        }),
+      })
       return
     }
     if (claimed !== true) return // lost the per-conversation cap race
 
-    await engineSendText({
-      accountId,
-      userId: configOwnerUserId,
-      conversationId,
-      contactId,
-      text,
-      aiGenerated: true,
-    })
+    try {
+      await engineSendText({
+        accountId,
+        userId: configOwnerUserId,
+        conversationId,
+        contactId,
+        text,
+        aiGenerated: true,
+      })
+    } catch (err) {
+      // The slot is already claimed (ai_reply_count incremented) but the
+      // customer never actually got anything — hand off rather than
+      // leaving the thread silently stuck until they happen to write
+      // again. Matches the WhatsApp send failures seen in production
+      // ("fetch failed", transient Meta 5xx/rate limits).
+      console.error('[ai auto-reply] engineSendText failed, handing off:', err)
+      await performHandoff(db, {
+        accountId,
+        conversationId,
+        contactId,
+        handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary: buildHandoffSummary({
+          messages,
+          replyCount: (conv.ai_reply_count ?? 0) + 1,
+          failureNote: 'failed to deliver the reply via WhatsApp',
+        }),
+      })
+      return
+    }
 
     // Attach the matched image as a follow-up message. Best-effort and
     // isolated from the text send above: a broken image URL or a Meta

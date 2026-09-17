@@ -20,8 +20,16 @@ const MAX_QUOTE_LEN = 160
 export function buildHandoffSummary(args: {
   messages: ChatMessage[]
   replyCount: number
+  /**
+   * Set when the handoff was forced by a technical failure (the
+   * provider call, the reply-slot claim, or the WhatsApp send itself
+   * failing) rather than the model choosing to bail. Distinguishes an
+   * infra problem worth investigating from a normal "can't help with
+   * this" handoff.
+   */
+  failureNote?: string
 }): string {
-  const { messages, replyCount } = args
+  const { messages, replyCount, failureNote } = args
 
   const lastCustomer = [...messages]
     .reverse()
@@ -32,7 +40,9 @@ export function buildHandoffSummary(args: {
       ? 'without replying'
       : `after ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`
 
-  const base = `🤖 AI agent handed off ${replies}.`
+  const base = failureNote
+    ? `⚠️ AI agent could not respond (${failureNote}) ${replies}.`
+    : `🤖 AI agent handed off ${replies}.`
 
   if (!lastCustomer) return base
 

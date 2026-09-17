@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { AiConfig } from './types'
+import { AiError, type AiConfig } from './types'
 
 // Shared, hoisted mock state so the module mocks can close over it.
 const h = vi.hoisted(() => ({
@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
     claim: true as boolean,
+    claimError: null as { message: string } | null,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
   },
@@ -77,7 +78,7 @@ vi.mock('./admin-client', () => ({
     },
     rpc: (name: string, args: unknown) => {
       h.state.rpcCalls.push({ name, args })
-      return Promise.resolve({ data: h.state.claim, error: null })
+      return Promise.resolve({ data: h.state.claim, error: h.state.claimError })
     },
   }),
 }))
@@ -114,6 +115,7 @@ beforeEach(() => {
   }
   h.state.autoResponders = []
   h.state.claim = true
+  h.state.claimError = null
   h.state.updatePayload = null
   h.state.rpcCalls = []
   h.loadAiConfig.mockResolvedValue(aiConfig())
@@ -398,5 +400,53 @@ describe('dispatchInboundToAiReply — lead-qualification tagging', () => {
     })
     await dispatchInboundToAiReply(ARGS)
     expect(h.addContactTagAndDispatch).not.toHaveBeenCalled()
+  })
+})
+
+describe('dispatchInboundToAiReply — resilience against silent stranding', () => {
+  it('retries once after a transient generateReply failure and still sends', async () => {
+    h.generateReply
+      .mockRejectedValueOnce(new AiError('timed out', { code: 'timeout' }))
+      .mockResolvedValueOnce({ text: 'Hello!', handoff: false })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Hello!' }),
+    )
+  })
+
+  it('hands off after generateReply fails twice in a row', async () => {
+    h.generateReply.mockRejectedValue(new AiError('down', { code: 'network_error' }))
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('AI provider error')
+  })
+
+  it('hands off immediately on an invalid-key error, without retrying', async () => {
+    h.generateReply.mockRejectedValue(new AiError('bad key', { code: 'invalid_key' }))
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalledTimes(1)
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('invalid AI provider key')
+  })
+
+  it('hands off (does not silently drop the turn) when claim_ai_reply_slot errors', async () => {
+    h.state.claimError = { message: 'function does not exist' }
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain(
+      'internal error claiming a reply slot',
+    )
+  })
+
+  it('hands off (does not silently drop the turn) when the WhatsApp send fails', async () => {
+    h.engineSendText.mockRejectedValue(new Error('fetch failed'))
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain(
+      'failed to deliver the reply via WhatsApp',
+    )
   })
 })

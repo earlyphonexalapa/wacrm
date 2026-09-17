@@ -63,4 +63,15 @@ describe('buildHandoffSummary', () => {
     })
     expect(summary).toBe('🤖 AI agent handed off without replying.')
   })
+
+  it('uses a distinct wording and includes the note for a technical failure', () => {
+    const summary = buildHandoffSummary({
+      messages: [{ role: 'user', content: 'hola' }],
+      replyCount: 1,
+      failureNote: 'AI provider error',
+    })
+    expect(summary).toBe(
+      '⚠️ AI agent could not respond (AI provider error) after 1 reply. Last customer message: “hola”',
+    )
+  })
 })
