@@ -991,6 +991,53 @@ function validateInteractiveHeaderFooter(
 }
 
 // ============================================================
+// Read receipts / typing indicator
+// ============================================================
+
+export interface MarkMessageReadArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** Meta's message_id (wamid) of the inbound message to mark read. */
+  messageId: string
+  /**
+   * Also show the "typing…" indicator to the customer. Meta clears it
+   * automatically once we send a reply, or after ~25s, whichever
+   * comes first — so this is meant to be called right before doing
+   * the (potentially slow) work of generating that reply.
+   */
+  showTypingIndicator?: boolean
+}
+
+/**
+ * Mark an inbound message as read, optionally with the "typing…"
+ * indicator. Requires a real inbound message id — Meta rejects this
+ * for anything else.
+ */
+export async function markMessageAsRead(args: MarkMessageReadArgs): Promise<void> {
+  const { phoneNumberId, accessToken, messageId, showTypingIndicator } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    status: 'read',
+    message_id: messageId,
+  }
+  if (showTypingIndicator) {
+    body.typing_indicator = { type: 'text' }
+  }
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+}
+
+// ============================================================
 // Media
 // ============================================================
 

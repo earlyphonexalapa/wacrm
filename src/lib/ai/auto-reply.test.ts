@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   loadTagRules: vi.fn(),
   addContactTagAndDispatch: vi.fn(),
   notifyHandoffNeedsHuman: vi.fn(),
+  showTypingIndicator: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -42,6 +43,9 @@ vi.mock('@/lib/contacts/tag-events', () => ({
 }))
 vi.mock('./handoff-notify', () => ({
   notifyHandoffNeedsHuman: h.notifyHandoffNeedsHuman,
+}))
+vi.mock('./typing', () => ({
+  showTypingIndicator: h.showTypingIndicator,
 }))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
@@ -122,6 +126,7 @@ beforeEach(() => {
   h.loadTagRules.mockResolvedValue([])
   h.addContactTagAndDispatch.mockResolvedValue({ added: true, dispatched: true })
   h.notifyHandoffNeedsHuman.mockResolvedValue(undefined)
+  h.showTypingIndicator.mockResolvedValue(undefined)
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {
@@ -209,6 +214,32 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+})
+
+describe('dispatchInboundToAiReply — typing indicator', () => {
+  it('shows the typing indicator once eligibility gates pass', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.showTypingIndicator).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ accountId: 'acct-1', conversationId: 'conv-1' }),
+    )
+  })
+
+  it('does not show it when an eligibility gate fails first', async () => {
+    h.state.conv = {
+      assigned_agent_id: 'agent-9',
+      ai_autoreply_disabled: false,
+      ai_reply_count: 0,
+    }
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.showTypingIndicator).not.toHaveBeenCalled()
+  })
+
+  it('still sends the reply when showing the typing indicator fails', async () => {
+    h.showTypingIndicator.mockRejectedValue(new Error('meta rejected it'))
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+    expect(h.engineSendText).toHaveBeenCalled()
   })
 })
 

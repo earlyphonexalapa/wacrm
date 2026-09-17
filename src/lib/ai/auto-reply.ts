@@ -12,6 +12,7 @@ import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events'
 import { notifyHandoffNeedsHuman } from './handoff-notify'
+import { showTypingIndicator } from './typing'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -100,6 +101,11 @@ export async function dispatchInboundToAiReply(
       )
       return
     }
+
+    // Show "typing…" to the customer while the slower work below (RAG
+    // retrieval + the provider call) runs — purely cosmetic, so it's
+    // fire-and-forget and never allowed to delay or block the reply.
+    void showTypingIndicator(db, { accountId, conversationId }).catch(() => {})
 
     // Ground the reply in the account's knowledge base (best-effort).
     const lastCustomerText = latestUserMessage(messages)
