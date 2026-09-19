@@ -15,7 +15,21 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  isSupportedLocale,
+  LOCALE_COOKIE,
+  LOCALE_LABELS,
+  SUPPORTED_LOCALES,
+} from '@/i18n/config';
 import { SettingsPanelHead } from './settings-panel-head';
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
@@ -33,6 +47,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function ProfileForm() {
   const t = useTranslations('Settings.profile');
+  const locale = useLocale();
+  const router = useRouter();
   const { user, profile, refreshProfile } = useAuth();
   const supabase = createClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -88,6 +104,14 @@ export function ProfileForm() {
     setPendingAvatar(file);
     setPreviewUrl(URL.createObjectURL(file));
     setRemoveAvatar(false);
+  };
+
+  // The language is a per-browser cookie read on the server (see
+  // src/i18n/request.ts); refresh re-renders the page in the new one.
+  const onPickLanguage = (next: string) => {
+    if (!isSupportedLocale(next) || next === locale) return;
+    document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
+    router.refresh();
   };
 
   const onRemoveAvatar = () => {
@@ -337,6 +361,27 @@ export function ProfileForm() {
           )}
 
         </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="space-y-2">
+            <Label htmlFor="profile-language" className="text-foreground">
+              {t('language')}
+            </Label>
+            <Select value={locale} onValueChange={(v) => v && onPickLanguage(v)}>
+              <SelectTrigger id="profile-language" className="w-full sm:w-64">
+                <SelectValue>{isSupportedLocale(locale) ? LOCALE_LABELS[locale] : locale}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_LOCALES.map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {LOCALE_LABELS[code]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('languageHint')}</p>
+          </CardContent>
         </Card>
 
         <div className="flex justify-end">
