@@ -15,6 +15,7 @@ import type { MediaKind } from '@/lib/whatsapp/meta-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events'
 import { notifyHandoffNeedsHuman } from './handoff-notify'
+import { isCloserPhone, notifyCloserOnWhatsApp } from './handoff-whatsapp'
 import { showTypingIndicator } from './typing'
 import { AiError, type GenerateResult } from './types'
 
@@ -67,6 +68,15 @@ async function performHandoff(
       summary: args.summary,
     })
   }
+
+  // Extra channel: alert the closer on WhatsApp too (no-op unless it's
+  // switched on in the AI settings). Never throws.
+  await notifyCloserOnWhatsApp(db, {
+    accountId: args.accountId,
+    conversationId: args.conversationId,
+    contactId: args.contactId,
+    summary: args.summary,
+  })
 }
 
 /** Provider errors that will fail identically on an immediate retry —
@@ -142,6 +152,15 @@ export async function dispatchInboundToAiReply(
     // Cheap early-out; the authoritative cap check is the atomic claim
     // below (this read can race a concurrent inbound).
     if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+
+    // The closer answering a handoff alert is a teammate, not a lead —
+    // never let the bot reply to them.
+    const { data: inboundContact } = await db
+      .from('contacts')
+      .select('phone')
+      .eq('id', contactId)
+      .maybeSingle()
+    if (await isCloserPhone(db, accountId, (inboundContact as { phone?: string } | null)?.phone)) return
 
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
