@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
   runAutomationsForTrigger: vi.fn(),
   dispatchInboundToFlows: vi.fn(),
   scheduleAiAutoReply: vi.fn(),
+  cancelFollowupsOnInbound: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
   state: {
     // Result the message upsert's .select() resolves to. A genuine insert
@@ -198,6 +199,9 @@ vi.mock('@/lib/flows/engine', () => ({
 vi.mock('@/lib/ai/inbound-buffer', () => ({
   scheduleAiAutoReply: h.scheduleAiAutoReply,
 }))
+vi.mock('@/lib/followups/enroll', () => ({
+  cancelFollowupsOnInbound: h.cancelFollowupsOnInbound,
+}))
 vi.mock('@/lib/webhooks/deliver', () => ({
   dispatchWebhookEvent: h.dispatchWebhookEvent,
 }))
@@ -280,6 +284,22 @@ beforeEach(() => {
         resolve()
       }, 0)
     })
+  })
+})
+
+describe('inbound webhook: follow-up cancellation', () => {
+  it('cancels the contact\'s pending follow-ups when they write to us', async () => {
+    await runWebhook()
+    expect(h.cancelFollowupsOnInbound).toHaveBeenCalledTimes(1)
+    expect(h.cancelFollowupsOnInbound).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: 'contact-1' }),
+    )
+  })
+
+  it('does not cancel anything for a replayed delivery', async () => {
+    h.state.messageUpsertResult = []
+    await runWebhook()
+    expect(h.cancelFollowupsOnInbound).not.toHaveBeenCalled()
   })
 })
 

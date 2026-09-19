@@ -13,6 +13,10 @@ vi.mock('@/lib/automations/engine', () => ({
   runAutomationsForTrigger: mocks.dispatch,
 }));
 
+vi.mock('@/lib/followups/enroll', () => ({
+  onContactTagAdded: vi.fn().mockResolvedValue(undefined),
+}));
+
 import {
   addContactTagAndDispatch,
   getTagChainDepth,

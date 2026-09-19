@@ -104,6 +104,10 @@ vi.mock("./meta-send", () => ({
   engineSendInteractive: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
 }));
 
+vi.mock("@/lib/followups/enroll", () => ({
+  onContactTagAdded: vi.fn(async () => undefined),
+}));
+
 import { runAutomationsForTrigger, triggerMatches } from "./engine";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 

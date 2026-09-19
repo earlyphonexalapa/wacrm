@@ -10,6 +10,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { scheduleAiAutoReply } from '@/lib/ai/inbound-buffer'
+import { cancelFollowupsOnInbound } from '@/lib/followups/enroll'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   handleTemplateWebhookChange,
@@ -752,6 +753,11 @@ async function processMessage(
     )
     return
   }
+
+  // The lead wrote to us, so any pending follow-ups for them are moot.
+  // Only reached for a genuine first delivery (replays returned above),
+  // and it swallows its own errors — it can't affect message handling.
+  await cancelFollowupsOnInbound({ accountId, contactId: contactRecord.id })
 
   // Update conversation. The unread bump is done DB-side (migration 037's
   // bump_conversation_on_inbound) rather than as a read-modify-write of the

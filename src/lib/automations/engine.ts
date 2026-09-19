@@ -20,6 +20,7 @@ import type {
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
+import { onContactTagAdded } from '@/lib/followups/enroll'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
@@ -439,6 +440,13 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         tagId: cfg.tag_id,
       })
       if (!added) return `tag ${cfg.tag_id} already present`
+
+      // Follow-up sequences enroll / stop on tag changes (best-effort).
+      await onContactTagAdded({
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        tagId: cfg.tag_id,
+      })
 
       const depth = getTagChainDepth(args.context)
       if (depth >= MAX_TAG_CHAIN_DEPTH) {

@@ -4,6 +4,7 @@ import {
   runAutomationsForTrigger,
   type AutomationContext,
 } from '@/lib/automations/engine';
+import { onContactTagAdded } from '@/lib/followups/enroll';
 import { addContactTagIfAbsent } from './tag-write';
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from './tag-chain';
 
@@ -37,6 +38,14 @@ export async function addContactTagAndDispatch(
   });
 
   if (!added) return { added: false, dispatched: false, reason: 'duplicate' };
+
+  // Follow-up sequences enroll / stop on tag changes. Best-effort: it
+  // swallows its own errors and must never affect tagging itself.
+  await onContactTagAdded({
+    accountId: input.accountId,
+    contactId: input.contactId,
+    tagId: input.tagId,
+  });
 
   const depth = getTagChainDepth(input.context);
   if (depth >= MAX_TAG_CHAIN_DEPTH) {
