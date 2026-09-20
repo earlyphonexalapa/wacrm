@@ -414,6 +414,46 @@ describe('dispatchInboundToAiReply — lead-qualification tagging', () => {
     expect(h.engineSendText).toHaveBeenCalled()
   })
 
+  it('applies several tags named in one reply', async () => {
+    h.loadTagRules.mockResolvedValue(RULES)
+    h.generateReply.mockResolvedValue({
+      text: 'Perfecto [[TAG: Calificado]] [[TAG: No calificado]]',
+      handoff: false,
+    })
+    await dispatchInboundToAiReply(ARGS)
+    const ids = h.addContactTagAndDispatch.mock.calls.map((c) => (c[0] as { tagId: string }).tagId)
+    expect(ids).toEqual(['tag-1', 'tag-2'])
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: 'Perfecto' }))
+  })
+
+  it('tags deterministically when the reply that was sent contains a rule phrase, without any marker', async () => {
+    h.loadTagRules.mockResolvedValue([
+      ...RULES,
+      { tagId: 'tag-price', tagName: 'Precio Dado', description: 'quoted the price', replyContains: ['1197', '1,197'] },
+    ])
+    h.generateReply.mockResolvedValue({ text: 'Hoy está en promo por *1197* MXN, pago único', handoff: false })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.addContactTagAndDispatch).toHaveBeenCalledWith(expect.objectContaining({ tagId: 'tag-price' }))
+  })
+
+  it('does not phrase-tag when the reply was never sent (handoff)', async () => {
+    h.loadTagRules.mockResolvedValue([
+      { tagId: 'tag-price', tagName: 'Precio Dado', description: 'quoted the price', replyContains: ['1197'] },
+    ])
+    h.generateReply.mockResolvedValue({ text: '1197 [[HANDOFF]]', handoff: true })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.addContactTagAndDispatch).not.toHaveBeenCalled()
+  })
+
+  it('tells the model which tags the lead already has', async () => {
+    h.loadTagRules.mockResolvedValue(RULES)
+    h.generateReply.mockResolvedValue({ text: 'Hola', handoff: false })
+    await dispatchInboundToAiReply(ARGS)
+    const prompt = (h.generateReply.mock.calls[0][0] as { systemPrompt: string }).systemPrompt
+    expect(prompt).toContain('EVERY reply')
+    expect(prompt).toContain('Calificado')
+  })
+
   it('does nothing when no rules are configured', async () => {
     h.generateReply.mockResolvedValue({
       text: 'Reply text [[TAG: Calificado]]',

@@ -1817,7 +1817,13 @@
       "saveSuccess": "Regla de etiquetado guardada.",
       "saveFailed": "No se pudo guardar la regla.",
       "removeSuccess": "Regla eliminada.",
-      "removeFailed": "No se pudo eliminar la regla."
+      "removeFailed": "No se pudo eliminar la regla.",
+      "edit": "Editar regla",
+      "phrasesLabel": "Aplicar también automáticamente cuando la respuesta del bot contenga (opcional)",
+      "phrasesPlaceholder": "p. ej. 1197, 1,197",
+      "phrasesHint": "Separa las frases con comas. Si la respuesta que el bot realmente envía contiene alguna, la etiqueta se aplica sí o sí, sin depender de que la IA se acuerde. Ideal para datos concretos como un precio.",
+      "autoWhenReplyContains": "Automática cuando la respuesta contiene: {phrases}",
+      "savedWithoutPhrases": "Regla guardada, pero las frases automáticas requieren la última actualización de la base de datos (migración 048)."
     },
     "aiHandoffAlert": {
       "title": "Alerta al closer por WhatsApp",

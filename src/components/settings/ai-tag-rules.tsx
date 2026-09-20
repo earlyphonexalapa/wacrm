@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, Tags } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2, Tags } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Card,
@@ -28,6 +29,7 @@ interface TagRule {
   id: string;
   tag_id: string;
   description: string;
+  reply_contains?: string[] | null;
   tags: Pick<Tag, 'id' | 'name' | 'color'> | Pick<Tag, 'id' | 'name' | 'color'>[] | null;
 }
 
@@ -49,6 +51,9 @@ export function AiTagRulesCard({
   const [adding, setAdding] = useState(false);
   const [selectedTagId, setSelectedTagId] = useState('');
   const [description, setDescription] = useState('');
+  const [phrases, setPhrases] = useState('');
+  // Set while editing an existing rule (its tag can't be changed).
+  const [editingTagId, setEditingTagId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const loadedAccountIdRef = useRef<string | null>(null);
 
@@ -78,14 +83,26 @@ export function AiTagRulesCard({
 
   const openAdd = () => {
     setAdding(true);
+    setEditingTagId(null);
     setSelectedTagId('');
     setDescription('');
+    setPhrases('');
+  };
+
+  const openEdit = (rule: TagRule) => {
+    setAdding(true);
+    setEditingTagId(rule.tag_id);
+    setSelectedTagId(rule.tag_id);
+    setDescription(rule.description);
+    setPhrases((rule.reply_contains ?? []).join(', '));
   };
 
   const cancelAdd = () => {
     setAdding(false);
+    setEditingTagId(null);
     setSelectedTagId('');
     setDescription('');
+    setPhrases('');
   };
 
   const save = async () => {
@@ -98,11 +115,18 @@ export function AiTagRulesCard({
       const res = await fetch('/api/ai/tag-rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag_id: selectedTagId, description: description.trim() }),
+        body: JSON.stringify({
+          tag_id: selectedTagId,
+          description: description.trim(),
+          reply_contains: phrases
+            .split(',')
+            .map((p) => p.trim())
+            .filter(Boolean),
+        }),
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success(t('saveSuccess'));
+        toast.success(data.phrasesSaved === false ? t('savedWithoutPhrases') : t('saveSuccess'));
         cancelAdd();
         await fetchAll();
       } else {
@@ -134,7 +158,7 @@ export function AiTagRulesCard({
   // rule per tag (POST upserts, so re-picking one would just edit it, but
   // that's confusing surfaced as "add").
   const configuredTagIds = new Set(rules.map((r) => r.tag_id));
-  const pickableTags = availableTags.filter((tg) => !configuredTagIds.has(tg.id));
+  const pickableTags = availableTags.filter((tg) => !configuredTagIds.has(tg.id) || tg.id === editingTagId);
 
   return (
     <Card>
@@ -169,17 +193,33 @@ export function AiTagRulesCard({
                           {tag?.name ?? t('unknownTag')}
                         </span>
                         <p className="mt-1 text-sm text-muted-foreground">{rule.description}</p>
+                        {(rule.reply_contains ?? []).length > 0 && (
+                          <p className="mt-1 text-xs text-primary">
+                            {t('autoWhenReplyContains', { phrases: (rule.reply_contains ?? []).join(', ') })}
+                          </p>
+                        )}
                       </div>
                       {canEdit && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 shrink-0 p-0 text-destructive hover:text-destructive"
-                          onClick={() => void remove(rule.id)}
-                          title={t('removeSuccess')}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex shrink-0 items-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => openEdit(rule)}
+                            title={t('edit')}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                            onClick={() => void remove(rule.id)}
+                            title={t('removeSuccess')}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       )}
                     </li>
                   );
@@ -194,7 +234,7 @@ export function AiTagRulesCard({
                   <Select
                     value={selectedTagId}
                     onValueChange={(v) => setSelectedTagId(v ?? '')}
-                    disabled={saving}
+                    disabled={saving || editingTagId !== null}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder={t('tagPlaceholder')} />
@@ -221,6 +261,17 @@ export function AiTagRulesCard({
                     rows={3}
                     disabled={saving}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tag-rule-phrases">{t('phrasesLabel')}</Label>
+                  <Input
+                    id="tag-rule-phrases"
+                    value={phrases}
+                    onChange={(e) => setPhrases(e.target.value)}
+                    placeholder={t('phrasesPlaceholder')}
+                    disabled={saving}
+                  />
+                  <p className="text-xs text-muted-foreground">{t('phrasesHint')}</p>
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button variant="ghost" onClick={cancelAdd} disabled={saving}>

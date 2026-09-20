@@ -1817,7 +1817,13 @@
       "saveSuccess": "Tagging rule saved.",
       "saveFailed": "Failed to save the rule.",
       "removeSuccess": "Rule removed.",
-      "removeFailed": "Failed to remove the rule."
+      "removeFailed": "Failed to remove the rule.",
+      "edit": "Edit rule",
+      "phrasesLabel": "Also apply automatically when the bot’s reply contains (optional)",
+      "phrasesPlaceholder": "e.g. 1197, 1,197",
+      "phrasesHint": "Separate phrases with commas. If the reply the bot actually sends contains any of them, the tag is applied for sure — no need for the AI to remember. Ideal for plain facts like a price.",
+      "autoWhenReplyContains": "Automatic when the reply contains: {phrases}",
+      "savedWithoutPhrases": "Rule saved, but the automatic phrases need the latest database update (migration 048)."
     },
     "aiHandoffAlert": {
       "title": "Closer alert on WhatsApp",

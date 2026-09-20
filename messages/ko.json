@@ -1817,7 +1817,13 @@
       "saveSuccess": "태깅 규칙이 저장되었습니다.",
       "saveFailed": "규칙 저장에 실패했습니다.",
       "removeSuccess": "규칙이 제거되었습니다.",
-      "removeFailed": "규칙 제거에 실패했습니다."
+      "removeFailed": "규칙 제거에 실패했습니다.",
+      "edit": "규칙 편집",
+      "phrasesLabel": "봇의 답변에 다음이 포함되면 자동으로도 적용 (선택)",
+      "phrasesPlaceholder": "예: 1197, 1,197",
+      "phrasesHint": "쉼표로 구분하세요. 봇이 실제로 보낸 답변에 하나라도 포함되면 AI가 기억하지 못해도 태그가 반드시 적용됩니다. 가격 같은 명확한 정보에 적합합니다.",
+      "autoWhenReplyContains": "답변에 다음이 포함되면 자동 적용: {phrases}",
+      "savedWithoutPhrases": "규칙은 저장되었지만 자동 문구는 최신 데이터베이스 업데이트(마이그레이션 048)가 필요합니다."
     },
     "aiHandoffAlert": {
       "title": "클로저 WhatsApp 알림",

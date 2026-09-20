@@ -3,7 +3,13 @@ import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge, findKnowledgeMedia } from './knowledge'
-import { loadTagRules, extractTagSentinel, matchTagRule } from './tagging'
+import {
+  loadTagRules,
+  loadContactTagIds,
+  extractTagSentinels,
+  matchTagRules,
+  matchReplyPhrases,
+} from './tagging'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
@@ -198,12 +204,16 @@ export async function dispatchInboundToAiReply(
     // Lead-qualification tags the bot may apply this turn (e.g.
     // "Calificado" / "No calificado") — admin-authored via Setup.
     const tagRules = await loadTagRules(db, accountId)
+    // Tags the lead already has — the bot is told which stages are done and
+    // only considers the open ones (see buildTagRulesPrompt).
+    const appliedTagIds = tagRules.length > 0 ? await loadContactTagIds(db, contactId) : []
 
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
       tagRules,
+      appliedTagIds,
     })
 
     let generation: GenerateResult
@@ -252,7 +262,7 @@ export async function dispatchInboundToAiReply(
     // Strip the tag marker before anything downstream sees `text` — the
     // customer must never receive it, and the handoff-empty check below
     // must not be confused by a reply that was ONLY a tag marker.
-    const { text, rawTag } = extractTagSentinel(rawReplyText)
+    const { text, rawTags } = extractTagSentinels(rawReplyText)
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
@@ -272,19 +282,28 @@ export async function dispatchInboundToAiReply(
     // of whether this turn also hands off — classifying the lead is
     // useful either way, and `addContactTagAndDispatch` is a safe no-op
     // when the contact already has it.
-    const matchedTag = matchTagRule(tagRules, rawTag)
-    if (matchedTag) {
+    const matchedTags = matchTagRules(tagRules, rawTags)
+    const applyTag = async (tagId: string) => {
       try {
         await addContactTagAndDispatch({
           db,
           accountId,
           contactId,
-          tagId: matchedTag.tagId,
+          tagId,
           context: { conversation_id: conversationId },
         })
       } catch (err) {
         console.error('[ai auto-reply] tag assignment failed:', err)
       }
+    }
+    for (const rule of matchedTags) await applyTag(rule.tagId)
+    // One line per reply so "why wasn't this lead tagged?" can be answered
+    // from the logs: what it already had, what the model asked for.
+    if (tagRules.length > 0) {
+      const nameOf = (id: string) => tagRules.find((r) => r.tagId === id)?.tagName ?? id
+      console.log(
+        `[ai tagging] conv=${conversationId} had=[${appliedTagIds.map(nameOf).join(', ')}] model=[${rawTags.join(', ')}] applied=[${matchedTags.map((r) => r.tagName).join(', ')}]`,
+      )
     }
 
     if (handoff || !text) {
@@ -365,6 +384,13 @@ export async function dispatchInboundToAiReply(
         }),
       })
       return
+    }
+
+    // Deterministic tags: the reply is out, so anything it actually said
+    // (e.g. the price) is now true regardless of whether the model
+    // remembered to emit a marker. No-op for tags the lead already has.
+    for (const rule of matchReplyPhrases(tagRules, text)) {
+      if (!matchedTags.some((m) => m.tagId === rule.tagId)) await applyTag(rule.tagId)
     }
 
     // Attach the matched knowledge-base files (up to

@@ -3,7 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadAiConfig } from '@/lib/ai/config'
 import { retrieveKnowledge, findKnowledgeMedia } from '@/lib/ai/knowledge'
-import { loadTagRules, extractTagSentinel, matchTagRule } from '@/lib/ai/tagging'
+import { loadTagRules, extractTagSentinels, matchTagRules, matchReplyPhrases } from '@/lib/ai/tagging'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
@@ -92,8 +92,10 @@ export async function POST(request: Request) {
       systemPrompt,
       messages,
     })
-    const { text, rawTag } = extractTagSentinel(rawReplyText)
-    const matchedTag = matchTagRule(tagRules, rawTag)
+    const { text, rawTags } = extractTagSentinels(rawReplyText)
+    const matchedTags = matchTagRules(tagRules, rawTags)
+    const phraseTags = matchReplyPhrases(tagRules, text).filter((r) => !matchedTags.some((m) => m.tagId === r.tagId))
+    const wouldApply = [...matchedTags, ...phraseTags]
     const attachedMedia =
       !handoff && text
         ? media.map((m) => ({ url: m.url, mimeType: m.mimeType }))
@@ -104,7 +106,8 @@ export async function POST(request: Request) {
       media: attachedMedia,
       // Playground never writes to a real contact — this just shows
       // what tag the bot WOULD apply on a live conversation.
-      tag: matchedTag?.tagName ?? null,
+      tag: wouldApply[0]?.tagName ?? null,
+      tags: wouldApply.map((r) => r.tagName),
     })
   } catch (err) {
     if (err instanceof AiError) {
