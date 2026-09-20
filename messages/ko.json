@@ -109,7 +109,10 @@
       "outgoing": "발신",
       "tooltipIncoming": "수신 {count}건",
       "tooltipOutgoing": "발신 {count}건",
-      "ariaLabel": "일별 대화 수"
+      "ariaLabel": "일별 대화 수",
+      "groupedByWeek": "주별 그룹",
+      "groupedByMonth": "월별 그룹",
+      "weekOf": "{date} 주"
     },
     "pipelineDonut": {
       "title": "파이프라인 금액",
@@ -131,6 +134,46 @@
     },
     "emptyState": {
       "title": "아직 데이터가 충분하지 않습니다"
+    },
+    "period": {
+      "label": "기간",
+      "presetToday": "오늘",
+      "presetYesterday": "어제",
+      "preset3d": "최근 3일",
+      "preset7d": "최근 7일",
+      "preset30d": "최근 30일",
+      "preset90d": "최근 90일",
+      "presetTotal": "전체",
+      "presetCustom": "직접 지정",
+      "from": "시작",
+      "to": "종료",
+      "apply": "적용",
+      "custom_invalid": "두 날짜를 모두 선택하세요.",
+      "custom_order": "시작일이 종료일보다 늦을 수 없습니다.",
+      "custom_future": "종료일은 미래일 수 없습니다.",
+      "custom_too_long": "2년 이하의 기간을 선택하세요.",
+      "showing": "{range} 표시 중 · {days, plural, other {#일}}",
+      "loadFailed": "기간 통계를 불러오지 못했습니다",
+      "newContacts": "신규 연락처",
+      "newConversations": "신규 대화",
+      "messagesIn": "받은 메시지",
+      "messagesOut": "보낸 메시지 (봇 + 팀)",
+      "vsPrevious": "이전 기간 대비 {percent}% ({previous})",
+      "sameAsPrevious": "이전 기간과 동일 ({previous})",
+      "noBase": "이전 기간: {previous}",
+      "perDay": "하루 평균 {avg}",
+      "contactsPerDay": "일별 신규 연락처",
+      "contactsPerWeek": "주별 신규 연락처",
+      "contactsPerMonth": "월별 신규 연락처",
+      "contactsChartDesc": "선택한 기간 동안 들어온 신규 연락처 수입니다.",
+      "total": "합계: {count}",
+      "average": "평균: 하루 {avg}",
+      "best": "최고: {label} ({count})",
+      "noContacts": "이 기간에는 신규 연락처가 없습니다",
+      "noContactsHint": "더 넓은 기간을 선택해 보세요.",
+      "hoverHint": "막대 위에 커서를 올리면 정확한 수를 볼 수 있습니다.",
+      "tooltip": "{label}: {count, plural, other {신규 연락처 #명}}",
+      "weekOf": "{date} 주"
     }
   },
   "Inbox": {

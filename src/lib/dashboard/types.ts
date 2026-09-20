@@ -65,3 +65,13 @@ export interface ActivityItem {
   /** Optional deep-link for the whole row (not all items have a target). */
   href?: string
 }
+
+/** One calendar day (or a week / month bucket) from the period-stats query. */
+export interface PeriodDayPoint {
+  /** YYYY-MM-DD — the day, or the first day of the week / month bucket. */
+  day: string
+  newContacts: number
+  newConversations: number
+  incoming: number
+  outgoing: number
+}

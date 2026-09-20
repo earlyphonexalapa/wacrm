@@ -109,7 +109,10 @@
       "outgoing": "Salientes",
       "tooltipIncoming": "{count} entrantes",
       "tooltipOutgoing": "{count} salientes",
-      "ariaLabel": "Conversaciones por día"
+      "ariaLabel": "Conversaciones por día",
+      "groupedByWeek": "Agrupado por semana",
+      "groupedByMonth": "Agrupado por mes",
+      "weekOf": "Semana del {date}"
     },
     "pipelineDonut": {
       "title": "Valor del embudo",
@@ -131,6 +134,46 @@
     },
     "emptyState": {
       "title": "Aún no hay suficientes datos"
+    },
+    "period": {
+      "label": "Período",
+      "presetToday": "Hoy",
+      "presetYesterday": "Ayer",
+      "preset3d": "Últimos 3 días",
+      "preset7d": "Últimos 7 días",
+      "preset30d": "Últimos 30 días",
+      "preset90d": "Últimos 90 días",
+      "presetTotal": "Total",
+      "presetCustom": "Personalizado",
+      "from": "Desde",
+      "to": "Hasta",
+      "apply": "Aplicar",
+      "custom_invalid": "Elige las dos fechas.",
+      "custom_order": "“Desde” no puede ser posterior a “Hasta”.",
+      "custom_future": "La fecha final no puede ser futura.",
+      "custom_too_long": "Elige un rango de 2 años o menos.",
+      "showing": "Mostrando {range} · {days, plural, one {# día} other {# días}}",
+      "loadFailed": "No se pudieron cargar las estadísticas del período",
+      "newContacts": "Contactos nuevos",
+      "newConversations": "Conversaciones nuevas",
+      "messagesIn": "Mensajes recibidos",
+      "messagesOut": "Mensajes enviados (bot + equipo)",
+      "vsPrevious": "{percent}% vs período anterior ({previous})",
+      "sameAsPrevious": "Igual que el período anterior ({previous})",
+      "noBase": "Período anterior: {previous}",
+      "perDay": "{avg} por día en promedio",
+      "contactsPerDay": "Contactos nuevos por día",
+      "contactsPerWeek": "Contactos nuevos por semana",
+      "contactsPerMonth": "Contactos nuevos por mes",
+      "contactsChartDesc": "Cuántos contactos nuevos llegaron durante el período seleccionado.",
+      "total": "Total: {count}",
+      "average": "Promedio: {avg}/día",
+      "best": "Mejor: {label} ({count})",
+      "noContacts": "No hay contactos nuevos en este período",
+      "noContactsHint": "Prueba con un rango de fechas más amplio.",
+      "hoverHint": "Pasa el cursor sobre una barra para ver la cifra exacta.",
+      "tooltip": "{label}: {count, plural, one {# contacto nuevo} other {# contactos nuevos}}",
+      "weekOf": "Semana del {date}"
     }
   },
   "Inbox": {

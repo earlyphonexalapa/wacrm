@@ -11,6 +11,7 @@ import type {
   ActivityItem,
   ConversationsSeriesPoint,
   MetricsBundle,
+  PeriodDayPoint,
   PipelineDonutData,
   PipelineStageSlice,
   ResponseTimeBucket,
@@ -395,4 +396,38 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
   return items
     .sort((a, b) => (a.at > b.at ? -1 : a.at < b.at ? 1 : 0))
     .slice(0, limit)
+}
+
+// --- 6. Date-filtered stats (contacts / conversations / messages per day) ---
+
+/**
+ * One row per local calendar day in [from, to]; `from = null` means
+ * "since the first contact". Counted in SQL (see migration 047) so it
+ * isn't subject to PostgREST's 1,000-row cap.
+ */
+export async function loadPeriodStats(
+  db: DB,
+  from: string | null,
+  to: string,
+  timeZone: string,
+): Promise<PeriodDayPoint[]> {
+  const { data, error } = await db.rpc('dashboard_period_stats', {
+    p_from: from,
+    p_to: to,
+    p_tz: timeZone,
+  })
+  if (error) throw error
+  return ((data ?? []) as {
+    day: string
+    new_contacts: number
+    new_conversations: number
+    incoming_messages: number
+    outgoing_messages: number
+  }[]).map((r) => ({
+    day: r.day,
+    newContacts: r.new_contacts,
+    newConversations: r.new_conversations,
+    incoming: r.incoming_messages,
+    outgoing: r.outgoing_messages,
+  }))
 }

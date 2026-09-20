@@ -5,16 +5,15 @@ import { MessageSquare } from 'lucide-react'
 import type { ConversationsSeriesPoint } from '@/lib/dashboard/types'
 import { EmptyState } from './empty-state'
 import { Skeleton } from './skeleton'
-import { cn } from '@/lib/utils'
 
-type RangeDays = 7 | 30 | 90
+type Granularity = 'day' | 'week' | 'month'
 
 interface ConversationsChartProps {
-  /** Per-range data, so switching tabs never re-fetches. */
-  series: Record<RangeDays, ConversationsSeriesPoint[] | null>
+  /** Points for the dashboard's selected date range (already bucketed). */
+  data: ConversationsSeriesPoint[] | null
   loading: boolean
-  range: RangeDays
-  onRangeChange: (r: RangeDays) => void
+  /** Each point covers a day, a week (Monday start) or a month. */
+  granularity?: Granularity
 }
 
 // ------------------------------------------------------------
@@ -29,9 +28,8 @@ const PADDING = { top: 16, right: 16, bottom: 28, left: 40 }
 
 import { useTranslations } from 'next-intl'
 
-export function ConversationsChart({ series, loading, range, onRangeChange }: ConversationsChartProps) {
+export function ConversationsChart({ data, loading, granularity = 'day' }: ConversationsChartProps) {
   const t = useTranslations('Dashboard.conversationsChart')
-  const data = series[range]
 
   // Memoise the max so per-day hover math doesn't recompute it.
   const { maxY, niceTicks } = useMemo(() => {
@@ -55,23 +53,11 @@ export function ConversationsChart({ series, loading, range, onRangeChange }: Co
           <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">{t('description')}</p>
         </div>
-        <div className="flex items-center gap-1 rounded-lg bg-muted/60 p-1">
-          {[7, 30, 90].map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => onRangeChange(r as RangeDays)}
-              className={cn(
-                'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                range === r
-                  ? 'bg-secondary text-secondary-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {t('days', { count: r })}
-            </button>
-          ))}
-        </div>
+        {granularity !== 'day' && (
+          <span className="rounded-md bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground">
+            {granularity === 'week' ? t('groupedByWeek') : t('groupedByMonth')}
+          </span>
+        )}
       </header>
 
       <div className="p-5">
@@ -84,7 +70,7 @@ export function ConversationsChart({ series, loading, range, onRangeChange }: Co
             hint={t('noActivityHint')}
           />
         ) : (
-          <LineSvg data={data} maxY={maxY} ticks={niceTicks} t={t} />
+          <LineSvg data={data} maxY={maxY} ticks={niceTicks} t={t} granularity={granularity} />
         )}
       </div>
 
@@ -104,12 +90,14 @@ function LineSvg({
   data,
   maxY,
   ticks,
-  t
+  t,
+  granularity,
 }: {
   data: ConversationsSeriesPoint[]
   maxY: number
   ticks: number[]
   t: ReturnType<typeof useTranslations>
+  granularity: Granularity
 }) {
   // Hover state: both the snapped index AND the tooltip's pixel
   // offset inside the wrapper div. They're stored together so the
@@ -238,7 +226,7 @@ function LineSvg({
               textAnchor="middle"
               className="fill-muted-foreground text-[10px]"
             >
-              {shortDayLabel(p.day)}
+              {shortDayLabel(p.day, granularity)}
             </text>
           ) : null,
         )}
@@ -288,7 +276,7 @@ function LineSvg({
           className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-md border border-border bg-popover px-2.5 py-1.5 text-[11px] shadow-lg"
           style={{ left: `${hover.tooltipLeftPx}px` }}
         >
-          <div className="font-medium text-popover-foreground">{longDayLabel(hovered.day)}</div>
+          <div className="font-medium text-popover-foreground">{granularity === 'week' ? t('weekOf', { date: longDayLabel(hovered.day, granularity) }) : longDayLabel(hovered.day, granularity)}</div>
           <div className="mt-1 flex flex-col gap-0.5">
             <span className="flex items-center gap-1.5 text-blue-300">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500" />
@@ -314,17 +302,26 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   )
 }
 
-function shortDayLabel(key: string): string {
+function shortDayLabel(key: string, granularity: Granularity = 'day'): string {
   // key is YYYY-MM-DD; return "Apr 17"-style. Using Date with an
   // appended time avoids timezone-shift surprises across midnight.
   const [y, m, d] = key.split('-').map(Number)
   const date = new Date(y, m - 1, d)
+  if (granularity === 'month') {
+    return date.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
+  }
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-function longDayLabel(key: string): string {
+function longDayLabel(key: string, granularity: Granularity = 'day'): string {
   const [y, m, d] = key.split('-').map(Number)
   const date = new Date(y, m - 1, d)
+  if (granularity === 'month') {
+    return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+  }
+  if (granularity === 'week') {
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  }
   return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
 }
 

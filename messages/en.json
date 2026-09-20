@@ -109,7 +109,10 @@
       "outgoing": "Outgoing",
       "tooltipIncoming": "{count} incoming",
       "tooltipOutgoing": "{count} outgoing",
-      "ariaLabel": "Conversations per day"
+      "ariaLabel": "Conversations per day",
+      "groupedByWeek": "Grouped by week",
+      "groupedByMonth": "Grouped by month",
+      "weekOf": "Week of {date}"
     },
     "pipelineDonut": {
       "title": "Pipeline Value",
@@ -131,6 +134,46 @@
     },
     "emptyState": {
       "title": "Not enough data yet"
+    },
+    "period": {
+      "label": "Period",
+      "presetToday": "Today",
+      "presetYesterday": "Yesterday",
+      "preset3d": "Last 3 days",
+      "preset7d": "Last 7 days",
+      "preset30d": "Last 30 days",
+      "preset90d": "Last 90 days",
+      "presetTotal": "All time",
+      "presetCustom": "Custom",
+      "from": "From",
+      "to": "To",
+      "apply": "Apply",
+      "custom_invalid": "Choose both dates.",
+      "custom_order": "“From” can’t be after “To”.",
+      "custom_future": "The end date can’t be in the future.",
+      "custom_too_long": "Pick a range of 2 years or less.",
+      "showing": "Showing {range} · {days, plural, one {# day} other {# days}}",
+      "loadFailed": "Could not load the period statistics",
+      "newContacts": "New contacts",
+      "newConversations": "New conversations",
+      "messagesIn": "Messages received",
+      "messagesOut": "Messages sent (bot + team)",
+      "vsPrevious": "{percent}% vs previous period ({previous})",
+      "sameAsPrevious": "Same as the previous period ({previous})",
+      "noBase": "Previous period: {previous}",
+      "perDay": "{avg} per day on average",
+      "contactsPerDay": "New contacts per day",
+      "contactsPerWeek": "New contacts per week",
+      "contactsPerMonth": "New contacts per month",
+      "contactsChartDesc": "How many new contacts came in during the selected period.",
+      "total": "Total: {count}",
+      "average": "Average: {avg}/day",
+      "best": "Best: {label} ({count})",
+      "noContacts": "No new contacts in this period",
+      "noContactsHint": "Try a wider date range.",
+      "hoverHint": "Hover a bar to see the exact number.",
+      "tooltip": "{label}: {count, plural, one {# new contact} other {# new contacts}}",
+      "weekOf": "Week of {date}"
     }
   },
   "Inbox": {
