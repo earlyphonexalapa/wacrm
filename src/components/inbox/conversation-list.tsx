@@ -44,7 +44,7 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 
 
-type InboxFilter = ConversationStatus | "all" | "unread";
+type InboxFilter = ConversationStatus | "all" | "unread" | "needsHuman";
 
 export function ConversationList({
   activeConversationId,
@@ -58,6 +58,7 @@ export function ConversationList({
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
     { label: t("filterAll"), value: "all" },
     { label: t("filterUnread"), value: "unread" },
+    { label: t("filterNeedsHuman"), value: "needsHuman" },
     { label: t("filterOpen"), value: "open" },
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
@@ -158,11 +159,25 @@ export function ConversationList({
     return m;
   }, [tags]);
 
+  // Count for the "needs attention" filter option, shown as a badge in the
+  // menu so an owner/admin auditing the inbox sees it without switching
+  // filters. Any account member can see every conversation here (RLS scopes
+  // by account, not by assignment), so this reflects the whole team.
+  const needsHumanCount = useMemo(
+    () => conversations.filter((c) => c.ai_autoreply_disabled).length,
+    [conversations],
+  );
+
   const filtered = useMemo(() => {
     let result = conversations;
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
+    } else if (filter === "needsHuman") {
+      // Bot paused here — either it handed off, or a teammate took over
+      // manually. Covers both "needs a human" and "AI is paused" in one
+      // filter, since on this app they're the same flag.
+      result = result.filter((c) => c.ai_autoreply_disabled);
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
     }
@@ -238,8 +253,20 @@ export function ConversationList({
 
         <div className="flex flex-wrap items-center gap-1">
           <DropdownMenu>
-            <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
+            <DropdownMenuTrigger
+              className={cn(
+                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                filter === "needsHuman"
+                  ? "text-amber-500 hover:text-amber-500"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
                 {activeFilter?.label ?? t("filterAll")}
+                {filter === "needsHuman" && needsHumanCount > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+                    {needsHumanCount}
+                  </span>
+                )}
                 <ChevronDown className="h-3 w-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -251,13 +278,18 @@ export function ConversationList({
                   key={opt.value}
                   onClick={() => setFilter(opt.value)}
                   className={cn(
-                    "text-sm",
+                    "flex items-center justify-between gap-3 text-sm",
                     filter === opt.value
                       ? "text-primary"
                       : "text-popover-foreground"
                   )}
                 >
-                  {opt.label}
+                  <span>{opt.label}</span>
+                  {opt.value === "needsHuman" && needsHumanCount > 0 && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+                      {needsHumanCount}
+                    </span>
+                  )}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

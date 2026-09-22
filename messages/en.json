@@ -193,7 +193,8 @@
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "filterNeedsHuman": "Needs attention"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
