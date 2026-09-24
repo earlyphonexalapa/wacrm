@@ -68,6 +68,8 @@ export function AiKnowledgeCard({
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  // Comma-separated words; the files are sent only when the customer writes one.
+  const [mediaTriggers, setMediaTriggers] = useState('');
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
@@ -100,6 +102,7 @@ export function AiKnowledgeCard({
     setTitle('');
     setContent('');
     setMediaItems([]);
+    setMediaTriggers('');
   };
 
   const openEdit = async (id: string) => {
@@ -114,6 +117,7 @@ export function AiKnowledgeCard({
       setTitle(data.title ?? '');
       setContent(data.content ?? '');
       setMediaItems(Array.isArray(data.media) ? data.media : []);
+      setMediaTriggers(Array.isArray(data.media_triggers) ? data.media_triggers.join(', ') : '');
     } catch {
       toast.error(t('openFailed'));
     }
@@ -124,6 +128,7 @@ export function AiKnowledgeCard({
     setTitle('');
     setContent('');
     setMediaItems([]);
+    setMediaTriggers('');
   };
 
   const pickFiles = () => fileInputRef.current?.click();
@@ -192,6 +197,10 @@ export function AiKnowledgeCard({
             title: title.trim(),
             content: content.trim(),
             media: mediaItems,
+            media_triggers: mediaTriggers
+              .split(',')
+              .map((p) => p.trim())
+              .filter(Boolean),
           }),
         },
       );
@@ -397,6 +406,20 @@ export function AiKnowledgeCard({
                       )}
                       {t('addFiles')} ({mediaItems.length}/{MAX_MEDIA_ITEMS})
                     </Button>
+                  )}
+
+                  {mediaItems.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <Label htmlFor="kb-media-triggers">{t('mediaTriggersLabel')}</Label>
+                      <Input
+                        id="kb-media-triggers"
+                        value={mediaTriggers}
+                        onChange={(e) => setMediaTriggers(e.target.value)}
+                        placeholder={t('mediaTriggersPlaceholder')}
+                        disabled={saving}
+                      />
+                      <p className="text-xs text-muted-foreground">{t('mediaTriggersHint')}</p>
+                    </div>
                   )}
                 </div>
                 <div className="flex justify-end gap-2">

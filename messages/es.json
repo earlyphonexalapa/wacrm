@@ -1781,7 +1781,10 @@
       "maxItemsTrimmed": "Solo se agregaron los primeros archivos: máximo {max} por documento.",
       "fileTypeInvalid": "\"{name}\" no es una imagen ni un PDF.",
       "fileTooLarge": "\"{name}\" es demasiado grande.",
-      "fileUploadFailed": "No se pudo subir un archivo."
+      "fileUploadFailed": "No se pudo subir un archivo.",
+      "mediaTriggersLabel": "Enviar los archivos solo cuando el cliente escriba alguna de estas palabras (opcional)",
+      "mediaTriggersPlaceholder": "p. ej. confiable, estafa, reseñas, real, resultados",
+      "mediaTriggersHint": "Separa las palabras con comas. Con palabras aquí, los archivos salen SOLO cuando el mensaje del cliente contiene alguna (palabra completa; se ignoran acentos y plurales), nunca ante un simple “sí” u “ok”. Déjalo vacío para que el asistente elija los archivos de este documento por tema. Los archivos que ya se enviaron en un chat nunca se vuelven a enviar."
     },
     "aiReactivateIdle": {
       "title": "Reactivar conversaciones inactivas",

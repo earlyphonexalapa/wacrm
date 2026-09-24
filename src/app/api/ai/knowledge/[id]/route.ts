@@ -13,6 +13,7 @@ import {
   MAX_KNOWLEDGE_MEDIA_ITEMS,
 } from '@/lib/ai/knowledge'
 import { AiError } from '@/lib/ai/types'
+import { normalizePhrases } from '@/lib/ai/tagging'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -23,20 +24,32 @@ export async function GET(_request: Request, { params }: Params) {
   try {
     const { supabase, accountId } = await getCurrentAccount()
     const { id } = await params
-    const { data, error } = await supabase
-      .from('ai_knowledge_documents')
-      .select('id, title, content, updated_at, ai_knowledge_media(media_url, media_type, position)')
-      .eq('account_id', accountId)
-      .eq('id', id)
-      .maybeSingle()
+    // media_triggers arrived with migration 049; fall back to the old
+    // column set so documents still open if it hasn't been applied yet.
+    const load = (columns: string) =>
+      supabase
+        .from('ai_knowledge_documents')
+        .select(columns)
+        .eq('account_id', accountId)
+        .eq('id', id)
+        .maybeSingle()
+    let { data, error } = await load(
+      'id, title, content, media_triggers, updated_at, ai_knowledge_media(media_url, media_type, position)',
+    )
+    if (error) {
+      ;({ data, error } = await load(
+        'id, title, content, updated_at, ai_knowledge_media(media_url, media_type, position)',
+      ))
+    }
     if (error) {
       console.error('[ai/knowledge/[id] GET] error:', error)
       return NextResponse.json({ error: 'Failed to load document' }, { status: 500 })
     }
     if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const { ai_knowledge_media, ...rest } = data as typeof data & {
+    const { ai_knowledge_media, ...rest } = data as unknown as {
       ai_knowledge_media: { media_url: string; media_type: string; position: number }[] | null
+      [key: string]: unknown
     }
     const media = (ai_knowledge_media ?? [])
       .sort((a, b) => a.position - b.position)
@@ -71,7 +84,11 @@ export async function PATCH(request: Request, { params }: Params) {
         { status: 400 },
       )
     }
-    if (title === undefined && content === undefined && !mediaProvided) {
+    // Words that must appear in the customer's message for this document's
+    // files to be sent (empty = the old fuzzy matching). Undefined = leave as-is.
+    const triggersProvided = body?.media_triggers !== undefined
+    const mediaTriggers = triggersProvided ? normalizePhrases(body.media_triggers, 15, 60) : []
+    if (title === undefined && content === undefined && !mediaProvided && !triggersProvided) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
     }
     if (title !== undefined && !title) {
@@ -81,27 +98,46 @@ export async function PATCH(request: Request, { params }: Params) {
       return NextResponse.json({ error: 'content cannot be empty' }, { status: 400 })
     }
 
-    const update: Record<string, string> = {}
+    const update: Record<string, unknown> = {}
     if (title !== undefined) update.title = title
     if (content !== undefined) update.content = content
+    if (triggersProvided) update.media_triggers = mediaTriggers
+    let triggersSkipped = false
 
     // An empty update (media-only PATCH) would otherwise send PostgREST
     // a SET with no columns — look the row up instead of updating it.
-    const { data: updated, error } =
+    const runUpdate = (fields: Record<string, unknown>) =>
+      supabase
+        .from('ai_knowledge_documents')
+        .update(fields)
+        .eq('account_id', accountId)
+        .eq('id', id)
+        .select('id')
+        .maybeSingle()
+    let { data: updated, error } =
       Object.keys(update).length > 0
-        ? await supabase
-            .from('ai_knowledge_documents')
-            .update(update)
-            .eq('account_id', accountId)
-            .eq('id', id)
-            .select('id')
-            .maybeSingle()
+        ? await runUpdate(update)
         : await supabase
             .from('ai_knowledge_documents')
             .select('id')
             .eq('account_id', accountId)
             .eq('id', id)
             .maybeSingle()
+    if (error && triggersProvided && error.message?.includes('media_triggers')) {
+      // Migration 049 not applied yet — save everything else.
+      triggersSkipped = true
+      const { media_triggers: _skip, ...rest } = update
+      void _skip
+      ;({ data: updated, error } =
+        Object.keys(rest).length > 0
+          ? await runUpdate(rest)
+          : await supabase
+              .from('ai_knowledge_documents')
+              .select('id')
+              .eq('account_id', accountId)
+              .eq('id', id)
+              .maybeSingle())
+    }
     if (error) {
       console.error('[ai/knowledge/[id] PATCH] error:', error)
       return NextResponse.json({ error: 'Failed to update document' }, { status: 500 })
@@ -147,7 +183,9 @@ export async function PATCH(request: Request, { params }: Params) {
       }
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json(
+      triggersSkipped ? { success: true, warning: 'Saved, but the trigger words need the latest database update (migration 049).' } : { success: true },
+    )
   } catch (err) {
     return toErrorResponse(err)
   }

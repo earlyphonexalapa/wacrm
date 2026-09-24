@@ -1781,7 +1781,10 @@
       "maxItemsTrimmed": "일부만 추가되었습니다 — 문서당 최대 {max}개입니다.",
       "fileTypeInvalid": "\"{name}\"은(는) 이미지나 PDF가 아닙니다.",
       "fileTooLarge": "\"{name}\" 파일이 너무 큽니다.",
-      "fileUploadFailed": "파일 업로드에 실패했습니다."
+      "fileUploadFailed": "파일 업로드에 실패했습니다.",
+      "mediaTriggersLabel": "고객이 다음 단어 중 하나를 쓸 때만 파일 전송 (선택)",
+      "mediaTriggersPlaceholder": "예: confiable, estafa, reseñas, real, resultados",
+      "mediaTriggersHint": "쉼표로 구분하세요. 여기에 단어를 입력하면 고객의 메시지에 그 단어(전체 단어, 악센트와 복수형 무시)가 있을 때만 파일이 전송되며, 단순한 “네”나 “ok”에는 전송되지 않습니다. 비워 두면 어시스턴트가 주제에 따라 이 문서의 파일을 고릅니다. 한 채팅에서 이미 보낸 파일은 다시 보내지 않습니다."
     },
     "aiReactivateIdle": {
       "title": "휴면 대화 재활성화",

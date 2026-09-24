@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AiConfig } from './types'
 import { chunkText } from './chunk'
 import { embedTexts, toVectorLiteral } from './embeddings'
+import { isTrivialQuery, matchesTrigger, unsentOnly } from './media-rules'
 
 // ============================================================
 // Knowledge base: ingest (chunk + optionally embed) and hybrid
@@ -220,41 +221,115 @@ export async function retrieveKnowledge(
 }
 
 /**
- * Find the attachments (images and/or PDFs, up to `MAX_KNOWLEDGE_MEDIA_ITEMS`)
- * on the best-matching knowledge-base document for `queryText`, so the
- * auto-reply bot can send them alongside its text reply (e.g. the
- * customer asks about "referencias de otros alumnos" and a "Prueba
- * social" document has 5 screenshots attached — sent in the order they
- * were uploaded).
+ * URLs of every file the business has already sent in this conversation
+ * (bot or agent). Best-effort: empty set on any failure.
+ */
+export async function loadSentMediaUrls(
+  db: SupabaseClient,
+  conversationId: string,
+): Promise<Set<string>> {
+  try {
+    const { data, error } = await db
+      .from('messages')
+      .select('media_url')
+      .eq('conversation_id', conversationId)
+      .neq('sender_type', 'customer')
+      .not('media_url', 'is', null)
+      .limit(200)
+    if (error || !data) return new Set()
+    return new Set(
+      (data as { media_url: string | null }[])
+        .map((r) => r.media_url)
+        .filter((u): u is string => typeof u === 'string' && u !== ''),
+    )
+  } catch {
+    return new Set()
+  }
+}
+
+export interface FindMediaOptions {
+  /** Files already sent in this conversation; never sent again. */
+  sentUrls?: Set<string>
+}
+
+/**
+ * Find the attachments (images and/or PDFs, up to MAX_KNOWLEDGE_MEDIA_ITEMS)
+ * the auto-reply bot may send alongside its text reply.
  *
- * Lexical-only (full-text search), not semantic: this is a bonus
- * attachment, not the primary grounding, and skipping the embeddings
- * call keeps it free and instant even on accounts with an embeddings
- * key configured. Business owners write the document's text as the
- * trigger description ("Prueba social — capturas de alumnos"), so FTS
- * matching against the customer's own words is enough.
+ * Rules, in order:
+ *  1. A message that says nothing about a topic ("Si", "Ok", "..") never
+ *     picks a file — it used to match whichever document happened to
+ *     contain those words and send it unasked.
+ *  2. A document with media_triggers (migration 049) is gated: its files
+ *     go out ONLY when the customer's message contains one of its trigger
+ *     phrases, and never through the fuzzy search below.
+ *  3. Otherwise the best full-text match among the un-gated documents
+ *     wins (lexical, not semantic: this is a bonus attachment, and
+ *     skipping the embeddings call keeps it free and instant).
+ *  4. Files already sent in this conversation are never sent again.
  *
- * Best-effort: any failure (no media-backed documents, RPC error)
- * returns `[]` rather than throwing — missing attachments must never
- * break the text reply.
+ * Best-effort: any failure returns [] rather than throwing — missing
+ * attachments must never break the text reply.
  */
 export async function findKnowledgeMedia(
   db: SupabaseClient,
   accountId: string,
   queryText: string,
+  opts: FindMediaOptions = {},
 ): Promise<KnowledgeMediaMatch[]> {
   const query = queryText.trim()
   if (!query) return []
+  if (isTrivialQuery(query)) return []
 
   try {
     // Cheap early-out: most accounts have zero media-backed documents,
-    // and this skips the RPC + two follow-up lookups below entirely.
+    // and this skips the RPC + follow-up lookups below entirely.
     const { count, error: countErr } = await db
       .from('ai_knowledge_media')
       .select('id', { count: 'exact', head: true })
       .eq('account_id', accountId)
     if (countErr || !count) return []
 
+    // Documents that gate their files behind trigger phrases. Isolated
+    // in its own try: if migration 049 isn't applied the column doesn't
+    // exist, and everything below keeps working as before.
+    let triggerDocs: { id: string; triggers: string[] }[] = []
+    try {
+      const { data: docRows, error: docErr } = await db
+        .from('ai_knowledge_documents')
+        .select('id, media_triggers')
+        .eq('account_id', accountId)
+      if (!docErr && Array.isArray(docRows)) {
+        triggerDocs = (docRows as { id: string; media_triggers: string[] | null }[])
+          .filter((d) => Array.isArray(d.media_triggers) && d.media_triggers.length > 0)
+          .map((d) => ({ id: d.id, triggers: d.media_triggers as string[] }))
+      }
+    } catch {
+      triggerDocs = []
+    }
+    const gatedIds = new Set(triggerDocs.map((d) => d.id))
+
+    // (2) A gated document whose trigger the customer just wrote.
+    const triggered = triggerDocs.filter((d) => matchesTrigger(query, d.triggers))
+    if (triggered.length > 0) {
+      const { data: rows, error } = await db
+        .from('ai_knowledge_media')
+        .select('document_id, media_url, media_type')
+        .in('document_id', triggered.map((d) => d.id))
+        .order('position', { ascending: true })
+      if (error || !rows) return []
+      for (const doc of triggered) {
+        const items = (rows as { document_id: string; media_url: string; media_type: string }[])
+          .filter((r) => r.document_id === doc.id)
+          .map((r) => ({ url: r.media_url, mimeType: r.media_type }))
+        if (items.length > 0) {
+          return unsentOnly(items.slice(0, MAX_KNOWLEDGE_MEDIA_ITEMS), opts.sentUrls)
+        }
+      }
+      return []
+    }
+
+    // (3) Best full-text match among the documents that aren't gated.
     const { data: hits, error: rpcErr } = await db.rpc('match_ai_knowledge_fts', {
       p_account_id: accountId,
       p_query: query,
@@ -291,12 +366,17 @@ export async function findKnowledgeMedia(
       mediaByDoc.set(row.document_id, list)
     }
 
-    // Walk the ranked chunk ids in order — the first one whose document
-    // carries attachments is the best-ranked media match.
+    // Walk the ranked chunk ids in order — the first un-gated document
+    // that carries attachments is the best-ranked media match. If all of
+    // its files were already sent we return nothing rather than falling
+    // through to an unrelated document.
     for (const chunkId of chunkIds) {
       const docId = docIdByChunk.get(chunkId)
-      const items = docId ? mediaByDoc.get(docId) : undefined
-      if (items && items.length > 0) return items.slice(0, MAX_KNOWLEDGE_MEDIA_ITEMS)
+      if (!docId || gatedIds.has(docId)) continue
+      const items = mediaByDoc.get(docId)
+      if (items && items.length > 0) {
+        return unsentOnly(items.slice(0, MAX_KNOWLEDGE_MEDIA_ITEMS), opts.sentUrls)
+      }
     }
     return []
   } catch (err) {

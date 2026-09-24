@@ -1781,7 +1781,10 @@
       "maxItemsTrimmed": "Only the first files were added — {max} per document max.",
       "fileTypeInvalid": "\"{name}\" isn't an image or a PDF.",
       "fileTooLarge": "\"{name}\" is too large.",
-      "fileUploadFailed": "Failed to upload a file."
+      "fileUploadFailed": "Failed to upload a file.",
+      "mediaTriggersLabel": "Send the files only when the customer writes one of these words (optional)",
+      "mediaTriggersPlaceholder": "e.g. confiable, estafa, reseñas, real, resultados",
+      "mediaTriggersHint": "Separate words with commas. With words here, the files go out ONLY when the customer’s message contains one of them (whole word; accents and plurals are ignored) — never for a bare “yes” or “ok”. Leave it empty to let the assistant pick this document’s files by topic. Files already sent in a chat are never sent again."
     },
     "aiReactivateIdle": {
       "title": "Reactivate idle conversations",

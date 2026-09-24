@@ -7,6 +7,8 @@ const h = vi.hoisted(() => ({
   buildConversationContext: vi.fn(),
   retrieveKnowledge: vi.fn(),
   findKnowledgeMedia: vi.fn(),
+  loadSentMediaUrls: vi.fn(),
+  findUnreadableInbound: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
   engineSendMedia: vi.fn(),
@@ -25,10 +27,14 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
-vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
+vi.mock('./context', () => ({
+  buildConversationContext: h.buildConversationContext,
+  findUnreadableInbound: h.findUnreadableInbound,
+}))
 vi.mock('./knowledge', () => ({
   retrieveKnowledge: h.retrieveKnowledge,
   findKnowledgeMedia: h.findKnowledgeMedia,
+  loadSentMediaUrls: h.loadSentMediaUrls,
 }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
 vi.mock('@/lib/flows/meta-send', () => ({
@@ -84,6 +90,8 @@ vi.mock('./admin-client', () => ({
 }))
 
 import { dispatchInboundToAiReply } from './auto-reply'
+import { resetMediaClaims } from './media-rules'
+import { __resetRateLimitForTests } from '@/lib/rate-limit'
 
 const ARGS = {
   accountId: 'acct-1',
@@ -122,6 +130,11 @@ beforeEach(() => {
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
   h.findKnowledgeMedia.mockResolvedValue([])
+  h.loadSentMediaUrls.mockResolvedValue(new Set())
+  h.findUnreadableInbound.mockResolvedValue(null)
+  resetMediaClaims()
+  // The account-wide throttle (30/min) is process-global; this file now dispatches more than that.
+  __resetRateLimitForTests()
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
   h.engineSendMedia.mockResolvedValue({ whatsapp_message_id: 'm2' })
@@ -461,6 +474,98 @@ describe('dispatchInboundToAiReply — lead-qualification tagging', () => {
     })
     await dispatchInboundToAiReply(ARGS)
     expect(h.addContactTagAndDispatch).not.toHaveBeenCalled()
+  })
+})
+
+describe('dispatchInboundToAiReply — media is sent once and only when asked', () => {
+  const FILES = [
+    { url: 'https://x/r1.png', mimeType: 'image/png' },
+    { url: 'https://x/r2.png', mimeType: 'image/png' },
+  ]
+
+  it('passes the files already sent in this conversation to the media lookup', async () => {
+    const sent = new Set(['https://x/r1.png'])
+    h.loadSentMediaUrls.mockResolvedValue(sent)
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.findKnowledgeMedia).toHaveBeenCalledWith(expect.anything(), 'acct-1', 'hi', { sentUrls: sent })
+  })
+
+  it('does not send the same file twice when two dispatches race on one conversation', async () => {
+    h.findKnowledgeMedia.mockResolvedValue(FILES)
+    await Promise.all([dispatchInboundToAiReply(ARGS), dispatchInboundToAiReply(ARGS)])
+    const urls = h.engineSendMedia.mock.calls.map((c) => (c[0] as { link: string }).link)
+    expect(urls.sort()).toEqual(['https://x/r1.png', 'https://x/r2.png'])
+  })
+})
+
+describe('dispatchInboundToAiReply — things the bot cannot read', () => {
+  it('hands the chat to a human instead of improvising when the customer sent a voice note', async () => {
+    h.findUnreadableInbound.mockResolvedValue('audio')
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('voice note')
+  })
+
+  it('does so even when the only message so far is the voice note (no text context)', async () => {
+    h.buildConversationContext.mockResolvedValue([])
+    h.findUnreadableInbound.mockResolvedValue('audio')
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+  })
+})
+
+describe('dispatchInboundToAiReply — a reply that goes off the rails', () => {
+  const LOOP = 'y no me digas nada de eso '.repeat(30)
+
+  it('regenerates once and sends the good reply', async () => {
+    h.generateReply
+      .mockResolvedValueOnce({ text: LOOP, handoff: false })
+      .mockResolvedValueOnce({ text: 'Claro, te cuento 🙌', handoff: false })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: 'Claro, te cuento 🙌' }))
+  })
+
+  it('hands off — and sends nothing — when it is still nonsense', async () => {
+    h.generateReply.mockResolvedValue({ text: LOOP, handoff: false })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('unusable reply')
+  })
+
+  it('never tags a lead from a reply that was thrown away', async () => {
+    h.loadTagRules.mockResolvedValue([
+      { tagId: 'tag-price', tagName: 'Precio Dado', description: 'quoted the price', replyContains: ['1197'] },
+    ])
+    h.generateReply.mockResolvedValue({ text: '1197 ' + LOOP + '[[TAG: Precio Dado]]', handoff: false })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.addContactTagAndDispatch).not.toHaveBeenCalled()
+  })
+})
+
+describe('dispatchInboundToAiReply — natural line before a handoff', () => {
+  it('sends the short line the model wrote, then hands off', async () => {
+    h.generateReply.mockResolvedValue({ text: 'Va, dame un momento', handoff: true })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: 'Va, dame un momento' }))
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+  })
+
+  it('still hands off when that line fails to send', async () => {
+    h.engineSendText.mockRejectedValue(new Error('fetch failed'))
+    h.generateReply.mockResolvedValue({ text: 'Va, dame un momento', handoff: true })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+  })
+
+  it('drops a long ramble that comes with a handoff, as before', async () => {
+    h.generateReply.mockResolvedValue({ text: 'x'.repeat(400), handoff: true })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
   })
 })
 

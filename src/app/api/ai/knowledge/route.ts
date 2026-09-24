@@ -13,6 +13,7 @@ import {
   MAX_KNOWLEDGE_MEDIA_ITEMS,
 } from '@/lib/ai/knowledge'
 import { AiError } from '@/lib/ai/types'
+import { normalizePhrases } from '@/lib/ai/tagging'
 
 /**
  * GET /api/ai/knowledge
@@ -81,11 +82,20 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: doc, error } = await supabase
-      .from('ai_knowledge_documents')
-      .insert({ account_id: accountId, created_by: userId, title, content })
-      .select('id')
-      .single()
+    const mediaTriggers = normalizePhrases(body?.media_triggers, 15, 60)
+    const insertDoc = (extra: Record<string, unknown>) =>
+      supabase
+        .from('ai_knowledge_documents')
+        .insert({ account_id: accountId, created_by: userId, title, content, ...extra })
+        .select('id')
+        .single()
+    let triggersSkipped = false
+    let { data: doc, error } = await insertDoc(mediaTriggers.length > 0 ? { media_triggers: mediaTriggers } : {})
+    if (error && mediaTriggers.length > 0 && error.message?.includes('media_triggers')) {
+      // Migration 049 not applied yet — save the document without them.
+      ;({ data: doc, error } = await insertDoc({}))
+      triggersSkipped = true
+    }
     if (error || !doc) {
       console.error('[ai/knowledge POST] insert error:', error)
       return NextResponse.json(
@@ -139,7 +149,13 @@ export async function POST(request: Request) {
           'Saved with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key).',
       })
     }
-    return NextResponse.json({ success: true, id: doc.id })
+    return NextResponse.json({
+      success: true,
+      id: doc.id,
+      ...(triggersSkipped
+        ? { warning: 'Saved, but the trigger words need the latest database update (migration 049).' }
+        : {}),
+    })
   } catch (err) {
     return toErrorResponse(err)
   }

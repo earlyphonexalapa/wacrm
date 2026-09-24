@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
-import { buildConversationContext } from './context'
-import { retrieveKnowledge, findKnowledgeMedia } from './knowledge'
+import { buildConversationContext, findUnreadableInbound, type UnreadableKind } from './context'
+import { retrieveKnowledge, findKnowledgeMedia, loadSentMediaUrls } from './knowledge'
 import {
   loadTagRules,
   loadContactTagIds,
@@ -14,7 +14,9 @@ import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
-import { latestUserMessage } from './query'
+import { latestUserMessage, retrievalQuery } from './query'
+import { detectUnusableReply } from './sanity'
+import { claimMediaSend } from './media-rules'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
 import { basenameFromUrl } from '@/lib/media/filename'
 import type { MediaKind } from '@/lib/whatsapp/meta-api'
@@ -24,6 +26,19 @@ import { notifyHandoffNeedsHuman } from './handoff-notify'
 import { isCloserPhone, notifyCloserOnWhatsApp } from './handoff-whatsapp'
 import { showTypingIndicator } from './typing'
 import { AiError, type GenerateResult } from './types'
+
+/** A short natural line the model may write before its handoff marker
+ *  ("Va, dame un momento"). Longer than this is treated as the model
+ *  rambling and is dropped, as before. */
+const MAX_HANDOFF_TEXT_CHARS = 300
+
+const UNREADABLE_LABEL: Record<UnreadableKind, string> = {
+  audio: 'a voice note / audio',
+  video: 'a video',
+  image: 'an image',
+  document: 'a document',
+  location: 'a location',
+}
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -169,6 +184,27 @@ export async function dispatchInboundToAiReply(
     if (await isCloserPhone(db, accountId, (inboundContact as { phone?: string } | null)?.phone)) return
 
     const messages = await buildConversationContext(db, conversationId)
+
+    // A voice note / photo / file is invisible to the model (the context is
+    // text only), so it would answer a stale turn or make something up. A
+    // person can listen to it — hand the chat over instead.
+    const unreadable = await findUnreadableInbound(db, conversationId)
+    if (unreadable) {
+      await performHandoff(db, {
+        accountId,
+        conversationId,
+        contactId,
+        handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary: buildHandoffSummary({
+          messages,
+          replyCount: conv.ai_reply_count ?? 0,
+          failureNote: `the customer sent ${UNREADABLE_LABEL[unreadable]} that the bot cannot read`,
+        }),
+      })
+      return
+    }
+
     if (messages.length === 0) return
 
     // Account-wide throttle on the shared BYO key. The per-conversation
@@ -194,12 +230,16 @@ export async function dispatchInboundToAiReply(
 
     // Ground the reply in the account's knowledge base (best-effort).
     const lastCustomerText = latestUserMessage(messages)
-    const knowledge = await retrieveKnowledge(db, accountId, config, lastCustomerText)
+    // For a bare "Si" / "Ok" search by what the business just said instead.
+    const knowledge = await retrieveKnowledge(db, accountId, config, retrievalQuery(messages))
 
     // A knowledge-base document can carry an image (e.g. a price list or
     // course flyer) — find the best match now, alongside the text
     // grounding above, so it's ready to attach once the reply is sent.
-    const media = await findKnowledgeMedia(db, accountId, lastCustomerText)
+    // Files already sent in this conversation are never sent again, and a
+    // message with no topic ("Si") never picks one (see findKnowledgeMedia).
+    const sentUrls = await loadSentMediaUrls(db, conversationId)
+    const media = await findKnowledgeMedia(db, accountId, lastCustomerText, { sentUrls })
 
     // Lead-qualification tags the bot may apply this turn (e.g.
     // "Calificado" / "No calificado") — admin-authored via Setup.
@@ -258,6 +298,41 @@ export async function dispatchInboundToAiReply(
         return
       }
     }
+    // A model that goes off the rails (a long looping nonsense reply was
+    // once sent to a customer) gets one more try; if it is still unusable
+    // the chat goes to a human instead of the customer seeing garbage.
+    if (!generation.handoff && detectUnusableReply(extractTagSentinels(generation.text).text)) {
+      console.warn('[ai auto-reply] unusable reply generated, regenerating once')
+      void logAiUsage(db, {
+        accountId,
+        conversationId,
+        mode: 'auto_reply',
+        provider: config.provider,
+        model: config.model,
+        usage: generation.usage,
+      })
+      try {
+        generation = await generateReply({ config, systemPrompt, messages })
+      } catch (retryErr) {
+        console.error('[ai auto-reply] regeneration after an unusable reply failed:', retryErr)
+      }
+      if (!generation.handoff && detectUnusableReply(extractTagSentinels(generation.text).text)) {
+        console.error('[ai auto-reply] reply still unusable, handing off')
+        await performHandoff(db, {
+          accountId,
+          conversationId,
+          contactId,
+          handoffAgentId: config.handoffAgentId,
+          alreadyAssigned: Boolean(conv.assigned_agent_id),
+          summary: buildHandoffSummary({
+            messages,
+            replyCount: conv.ai_reply_count ?? 0,
+            failureNote: 'the AI produced an unusable reply',
+          }),
+        })
+        return
+      }
+    }
     const { text: rawReplyText, handoff, usage } = generation
     // Strip the tag marker before anything downstream sees `text` — the
     // customer must never receive it, and the handoff-empty check below
@@ -307,6 +382,23 @@ export async function dispatchInboundToAiReply(
     }
 
     if (handoff || !text) {
+      // The model may write one short natural line before its handoff
+      // marker ("Va, dame un momento"). Send it so the customer isn't left
+      // in silence while the chat goes to a person.
+      if (handoff && text && text.length <= MAX_HANDOFF_TEXT_CHARS) {
+        try {
+          await engineSendText({
+            accountId,
+            userId: configOwnerUserId,
+            conversationId,
+            contactId,
+            text,
+            aiGenerated: true,
+          })
+        } catch (err) {
+          console.error('[ai auto-reply] handoff line failed to send:', err)
+        }
+      }
       // The model can't (or shouldn't) answer — stop auto-replying on
       // this thread and hand it to a human.
       await performHandoff(db, {
@@ -402,6 +494,9 @@ export async function dispatchInboundToAiReply(
     for (const item of media) {
       const kind = mediaKindForMime(item.mimeType)
       if (!kind) continue
+      // Two dispatches for the same conversation can both read "not sent
+      // yet" from the database; the in-process claim makes only one send.
+      if (!claimMediaSend(conversationId, item.url)) continue
       try {
         await engineSendMedia({
           accountId,
