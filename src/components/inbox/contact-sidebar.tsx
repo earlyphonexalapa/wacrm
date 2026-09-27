@@ -15,11 +15,21 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  X,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
+import { hasMinRole } from "@/lib/auth/roles";
+import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -29,11 +39,15 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
-  const { accountId } = useAuth();
+  const { accountId, accountRole } = useAuth();
+  const canEditTags = accountRole ? hasMinRole(accountRole, "agent") : false;
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
-  const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [savingTagId, setSavingTagId] = useState<string | null>(null);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
@@ -65,20 +79,59 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     if (tagsRes.data) {
       const mapped = tagsRes.data
         .filter((ct: Record<string, unknown>) => ct.tags)
-        .map((ct: Record<string, unknown>) => ({
-          ...(ct.tags as Tag),
-          contact_tag_id: ct.id as string,
-        }));
+        .map((ct: Record<string, unknown>) => ct.tags as Tag);
       setTags(mapped);
     }
   }, [contact]);
 
+  // Every tag on the account, for the add/remove picker — independent of
+  // the active conversation, so it's fetched once rather than on every
+  // thread switch.
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await createClient().from("tags").select("*").order("name");
+      if (!cancelled && data) setAllTags(data as Tag[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
+
   // Load on contact change. setContactData/setTags run inside async
   // Supabase callbacks, not synchronously in the effect body.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
+    setTagPickerOpen(false);
   }, [fetchContactData]);
+
+  // Manual add/remove — same API route the Contacts page uses
+  // (POST/DELETE /api/contacts/:id/tags), so it goes through
+  // addContactTagAndDispatch and fires tag_added exactly like an
+  // AI-applied tag: automations and follow-up enrollment react the same
+  // way regardless of who (or what) added the tag.
+  const toggleTag = useCallback(
+    async (tag: Tag) => {
+      if (!contact) return;
+      const isSelected = tags.some((t) => t.id === tag.id);
+      setSavingTagId(tag.id);
+      try {
+        if (isSelected) {
+          await deleteContactTag(contact.id, tag.id);
+          setTags((prev) => prev.filter((t) => t.id !== tag.id));
+        } else {
+          await addContactTag(contact.id, tag.id);
+          setTags((prev) => [...prev, tag]);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : tSidebar("tagUpdateFailed"));
+      } finally {
+        setSavingTagId(null);
+      }
+    },
+    [contact, tags, tSidebar],
+  );
 
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
@@ -183,9 +236,53 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Tags */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <TagIcon className="h-3 w-3" />
-              {tSidebar("tags")}
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <TagIcon className="h-3 w-3" />
+                {tSidebar("tags")}
+              </div>
+              {canEditTags && (
+                <DropdownMenu open={tagPickerOpen} onOpenChange={setTagPickerOpen}>
+                  <DropdownMenuTrigger
+                    className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    title={tSidebar("addTag")}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="max-h-64 w-56 overflow-y-auto border-border bg-popover p-1.5">
+                    {allTags.length === 0 ? (
+                      <p className="px-2 py-1.5 text-xs text-muted-foreground">{tSidebar("noTagsAvailable")}</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5 p-1">
+                        {allTags.map((tag) => {
+                          const selected = tags.some((t) => t.id === tag.id);
+                          const busy = savingTagId === tag.id;
+                          return (
+                            <button
+                              key={tag.id}
+                              type="button"
+                              onClick={() => void toggleTag(tag)}
+                              disabled={busy}
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-opacity",
+                                selected ? "ring-2 ring-primary ring-offset-1 ring-offset-popover" : "opacity-50 hover:opacity-80",
+                              )}
+                              style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                            >
+                              {busy ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                selected && <Check className="h-3 w-3" />
+                              )}
+                              {tag.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               {tags.length === 0 ? (
@@ -193,14 +290,29 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               ) : (
                 tags.map((tag) => (
                   <span
-                    key={tag.contact_tag_id}
-                    className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    key={tag.id}
+                    className="inline-flex items-center gap-1 rounded-full py-0.5 pl-2 text-[10px] font-medium"
                     style={{
                       backgroundColor: `${tag.color}20`,
                       color: tag.color,
                     }}
                   >
                     {tag.name}
+                    {canEditTags && (
+                      <button
+                        type="button"
+                        onClick={() => void toggleTag(tag)}
+                        disabled={savingTagId === tag.id}
+                        className="rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
+                        title={tSidebar("removeTag")}
+                      >
+                        {savingTagId === tag.id ? (
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        ) : (
+                          <X className="h-2.5 w-2.5" />
+                        )}
+                      </button>
+                    )}
                   </span>
                 ))
               )}

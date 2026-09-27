@@ -331,7 +331,11 @@
       "deals": "Negociaciones",
       "noTags": "Sin etiquetas",
       "noDeals": "Sin negociaciones",
-      "addNotePlaceholder": "Agrega una nota..."
+      "addNotePlaceholder": "Agrega una nota...",
+      "addTag": "Agregar etiqueta",
+      "removeTag": "Quitar etiqueta",
+      "noTagsAvailable": "Aún no hay etiquetas: créalas en Configuración.",
+      "tagUpdateFailed": "No se pudo actualizar la etiqueta"
     },
     "aiBanner": {
       "pausedTitle": "El asistente de IA está en pausa aquí",
