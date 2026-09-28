@@ -415,6 +415,7 @@ export default function ExportsPage() {
                   indeterminate={!allOnPageSelected && someOnPageSelected}
                   onCheckedChange={toggleSelectAllOnPage}
                   disabled={rows.length === 0 || !canExport}
+                  className="border-muted-foreground/60"
                 />
               </TableHead>
               <TableHead className="text-muted-foreground">{t('col.contact')}</TableHead>
@@ -460,6 +461,7 @@ export default function ExportsPage() {
                         checked={selected.has(row.conversation_id)}
                         onCheckedChange={() => toggleSelect(row.conversation_id)}
                         disabled={!canExport}
+                        className="border-muted-foreground/60"
                       />
                     </TableCell>
                     <TableCell className="font-medium text-foreground">{displayName}</TableCell>
