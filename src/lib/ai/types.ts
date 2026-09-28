@@ -29,6 +29,13 @@ export interface AiConfig {
    *  knowledge base is embedded and semantic retrieval turns on; when
    *  null, retrieval falls back to lexical full-text search. */
   embeddingsApiKey: string | null
+  /** Daily on/off window for auto-reply. When `scheduleEnabled` is true,
+   *  an inbound outside [scheduleStartMin, scheduleEndMin) in
+   *  `scheduleTimezone` is treated exactly like auto-reply being off. */
+  scheduleEnabled: boolean
+  scheduleStartMin: number
+  scheduleEndMin: number
+  scheduleTimezone: string
 }
 
 /** A single conversation turn in the shape both providers accept. */

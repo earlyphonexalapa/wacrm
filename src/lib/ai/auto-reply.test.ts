@@ -111,6 +111,10 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     autoReplyMaxPerConversation: 3,
     handoffAgentId: null,
     embeddingsApiKey: null,
+    scheduleEnabled: false,
+    scheduleStartMin: 9 * 60,
+    scheduleEndMin: 21 * 60,
+    scheduleTimezone: 'America/Mexico_City',
     ...overrides,
   }
 }
@@ -229,6 +233,36 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+})
+
+describe('dispatchInboundToAiReply — daily on/off schedule', () => {
+  // America/Mexico_City has been fixed at UTC-6 (no DST) since 2022.
+  const utcAt = (h: number) => new Date(Date.UTC(2026, 8, 28, h, 0))
+
+  it('replies normally when the schedule is off, at any hour', async () => {
+    h.loadAiConfig.mockResolvedValue(aiConfig({ scheduleEnabled: false }))
+    await dispatchInboundToAiReply({ ...ARGS, now: utcAt(2) }) // 20:00 local
+    expect(h.engineSendText).toHaveBeenCalled()
+  })
+
+  it('replies inside the scheduled window', async () => {
+    h.loadAiConfig.mockResolvedValue(
+      aiConfig({ scheduleEnabled: true, scheduleStartMin: 9 * 60, scheduleEndMin: 21 * 60 }),
+    )
+    await dispatchInboundToAiReply({ ...ARGS, now: utcAt(18) }) // 12:00 local
+    expect(h.engineSendText).toHaveBeenCalled()
+  })
+
+  it('silently does nothing outside the window — no reply, no handoff, no alert', async () => {
+    h.loadAiConfig.mockResolvedValue(
+      aiConfig({ scheduleEnabled: true, scheduleStartMin: 9 * 60, scheduleEndMin: 21 * 60 }),
+    )
+    await dispatchInboundToAiReply({ ...ARGS, now: utcAt(8) }) // 02:00 local
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toBeNull()
+    expect(h.notifyHandoffNeedsHuman).not.toHaveBeenCalled()
   })
 })
 

@@ -173,6 +173,12 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Chat-export batch fetch, per user. The client fans a selection out
+   *  into MAX_EXPORT_BATCH-sized requests (src/lib/exports/rows.ts), so
+   *  exporting a few hundred conversations is a burst of calls within a
+   *  minute. 40/min covers that comfortably while still bounding a
+   *  script hammering the endpoint directly. */
+  exportBatch: { limit: 40, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

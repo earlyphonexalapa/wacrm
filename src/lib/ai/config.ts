@@ -12,10 +12,14 @@ interface AiConfigRow {
   auto_reply_max_per_conversation: number
   handoff_agent_id: string | null
   embeddings_api_key: string | null
+  schedule_enabled?: boolean
+  schedule_start_min?: number
+  schedule_end_min?: number
+  schedule_timezone?: string
 }
 
 const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key'
+  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, schedule_enabled, schedule_start_min, schedule_end_min, schedule_timezone'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -34,11 +38,19 @@ export async function loadAiConfig(
   opts: { requireActive?: boolean } = {},
 ): Promise<AiConfig | null> {
   const { requireActive = true } = opts
-  const { data, error } = await db
+  const BASE_COLUMNS =
+    'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key'
+  let { data, error } = await db
     .from('ai_configs')
     .select(CONFIG_COLUMNS)
     .eq('account_id', accountId)
     .maybeSingle()
+  if (error) {
+    // schedule_* arrived with migration 052; retry without them so the
+    // bot keeps working (schedule simply defaults to "off") before the
+    // migration has run, instead of every auto-reply silently breaking.
+    ;({ data, error } = await db.from('ai_configs').select(BASE_COLUMNS).eq('account_id', accountId).maybeSingle())
+  }
 
   if (error) throw error
   if (!data) return null
@@ -79,6 +91,10 @@ export async function loadAiConfig(
     autoReplyMaxPerConversation: row.auto_reply_max_per_conversation,
     handoffAgentId: row.handoff_agent_id,
     embeddingsApiKey,
+    scheduleEnabled: row.schedule_enabled ?? false,
+    scheduleStartMin: row.schedule_start_min ?? 540,
+    scheduleEndMin: row.schedule_end_min ?? 1260,
+    scheduleTimezone: row.schedule_timezone ?? 'America/Mexico_City',
   }
 }
 

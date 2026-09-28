@@ -9,6 +9,7 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, type AiProvider } from '@/lib/ai/types'
+import { isValidTimeZone } from '@/lib/followups/timing'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -25,15 +26,26 @@ export async function GET() {
   try {
     const { supabase, accountId } = await getCurrentAccount()
 
-    const { data, error } = await supabase
+    // `api_key` is selected only to derive `has_key` — it is stripped
+    // out below and never returned to the client. schedule_* arrived
+    // with migration 052; retry without them so the page still loads
+    // before it has run.
+    let { data, error } = await supabase
       .from('ai_configs')
-      // `api_key` is selected only to derive `has_key` — it is stripped
-      // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key, schedule_enabled, schedule_start_min, schedule_end_min, schedule_timezone',
       )
       .eq('account_id', accountId)
       .maybeSingle()
+    if (error) {
+      ;({ data, error } = await supabase
+        .from('ai_configs')
+        .select(
+          'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
+        )
+        .eq('account_id', accountId)
+        .maybeSingle())
+    }
 
     if (error) {
       console.error('[ai/config GET] fetch error:', error)
@@ -114,6 +126,23 @@ export async function POST(request: Request) {
       handoffAgentId = rawHandoff
     }
 
+    // Daily on/off schedule for auto-reply. Always sent by the form (like
+    // is_active/auto_reply_enabled above), so always validated and saved.
+    const scheduleEnabled = body.schedule_enabled === true
+    const clampMin = (v: unknown, fallback: number, max: number) => {
+      const n = Number(v)
+      return Number.isFinite(n) ? Math.min(max, Math.max(0, Math.floor(n))) : fallback
+    }
+    const scheduleStartMin = clampMin(body.schedule_start_min, 540, 1439)
+    const scheduleEndMin = Math.max(1, clampMin(body.schedule_end_min, 1260, 1440))
+    const scheduleTimezone =
+      typeof body.schedule_timezone === 'string' && body.schedule_timezone.trim()
+        ? body.schedule_timezone.trim()
+        : 'America/Mexico_City'
+    if (scheduleEnabled && !isValidTimeZone(scheduleTimezone)) {
+      return bad(`schedule_timezone "${scheduleTimezone}" is not a recognized timezone`)
+    }
+
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
 
     // Embeddings key (optional, for semantic KB search): a non-empty
@@ -167,6 +196,10 @@ export async function POST(request: Request) {
           autoReplyMaxPerConversation: maxPer,
           handoffAgentId: null,
           embeddingsApiKey: null,
+          scheduleEnabled: false,
+          scheduleStartMin: 0,
+          scheduleEndMin: 1440,
+          scheduleTimezone: 'UTC',
         })
       } catch (err) {
         if (err instanceof AiError) {
@@ -205,6 +238,10 @@ export async function POST(request: Request) {
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
+      schedule_enabled: scheduleEnabled,
+      schedule_start_min: scheduleStartMin,
+      schedule_end_min: scheduleEndMin,
+      schedule_timezone: scheduleTimezone,
     }
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.
@@ -215,11 +252,26 @@ export async function POST(request: Request) {
       shared.embeddings_api_key = null
     }
 
+    // schedule_* fall back the same way as the SELECT above: if migration
+    // 052 hasn't run yet, save everything else rather than failing the
+    // whole form on an unrelated column.
+    const withoutSchedule = (fields: Record<string, unknown>) => {
+      const { schedule_enabled: _1, schedule_start_min: _2, schedule_end_min: _3, schedule_timezone: _4, ...rest } = fields
+      void _1
+      void _2
+      void _3
+      void _4
+      return rest
+    }
+    let scheduleSkipped = false
+
     if (existing) {
-      const { error: upErr } = await supabase
-        .from('ai_configs')
-        .update(encryptedKey ? { ...shared, api_key: encryptedKey } : shared)
-        .eq('account_id', accountId)
+      const payload = encryptedKey ? { ...shared, api_key: encryptedKey } : shared
+      let { error: upErr } = await supabase.from('ai_configs').update(payload).eq('account_id', accountId)
+      if (upErr?.message?.includes('schedule_')) {
+        scheduleSkipped = true
+        ;({ error: upErr } = await supabase.from('ai_configs').update(withoutSchedule(payload)).eq('account_id', accountId))
+      }
       if (upErr) {
         console.error('[ai/config POST] update error:', upErr)
         return NextResponse.json(
@@ -228,12 +280,17 @@ export async function POST(request: Request) {
         )
       }
     } else {
-      const { error: insErr } = await supabase.from('ai_configs').insert({
+      const payload = {
         account_id: accountId,
         created_by: userId,
         api_key: encryptedKey, // guaranteed non-null: rawKey required when no existing row
         ...shared,
-      })
+      }
+      let { error: insErr } = await supabase.from('ai_configs').insert(payload)
+      if (insErr?.message?.includes('schedule_')) {
+        scheduleSkipped = true
+        ;({ error: insErr } = await supabase.from('ai_configs').insert(withoutSchedule(payload)))
+      }
       if (insErr) {
         console.error('[ai/config POST] insert error:', insErr)
         return NextResponse.json(
@@ -243,7 +300,11 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json(
+      scheduleSkipped
+        ? { success: true, warning: 'Saved, but the schedule needs the latest database update (migration 052).' }
+        : { success: true },
+    )
   } catch (err) {
     return toErrorResponse(err)
   }

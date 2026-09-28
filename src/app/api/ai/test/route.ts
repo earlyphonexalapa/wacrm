@@ -73,6 +73,10 @@ export async function POST(request: Request) {
         autoReplyMaxPerConversation: 3,
         handoffAgentId: null,
         embeddingsApiKey: null,
+        scheduleEnabled: false,
+        scheduleStartMin: 0,
+        scheduleEndMin: 1440,
+        scheduleTimezone: 'UTC',
       })
     } catch (err) {
       if (err instanceof AiError) {

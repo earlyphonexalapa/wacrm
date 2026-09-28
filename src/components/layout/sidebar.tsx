@@ -12,6 +12,7 @@ import {
   Bot,
   CalendarClock,
   Crown,
+  Download,
   GitBranch,
   LayoutDashboard,
   LogOut,
@@ -101,6 +102,7 @@ const navItems: NavItem[] = [
   { href: "/followups", labelKey: "followups", icon: CalendarClock },
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
   { href: "/agents", labelKey: "aiAgents", icon: Bot },
+  { href: "/exports", labelKey: "exports", icon: Download },
 ];
 
 const bottomNavItems = [

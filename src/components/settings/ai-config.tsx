@@ -51,6 +51,32 @@ const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   anthropic: 'sk-ant-...',
 };
 
+// A short, common preset list — the timezone is free text underneath, so
+// any IANA zone works even if it isn't in this list.
+const SCHEDULE_TIMEZONES = [
+  'America/Mexico_City',
+  'America/Bogota',
+  'America/Lima',
+  'America/Santiago',
+  'America/Argentina/Buenos_Aires',
+  'America/Caracas',
+  'America/New_York',
+  'America/Chicago',
+  'America/Los_Angeles',
+  'Europe/Madrid',
+  'UTC',
+];
+
+const toTimeInput = (min: number) =>
+  `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+/** "21:00" → 1260. "24:00" isn't valid for <input type=time>, so an end
+ *  of midnight is stored as 1440 and shown as 23:59. */
+const fromTimeInput = (value: string) => {
+  const [h, m] = value.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
 export function AiConfig() {
   const { accountId, accountRole, profileLoading } = useAuth();
   const canEdit = accountRole ? canEditSettings(accountRole) : false;
@@ -78,6 +104,10 @@ export function AiConfig() {
   // Empty string = leave unassigned (shared queue).
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleStartMin, setScheduleStartMin] = useState(540);
+  const [scheduleEndMin, setScheduleEndMin] = useState(1260);
+  const [scheduleTimezone, setScheduleTimezone] = useState('America/Mexico_City');
 
   // Guard keyed on the account (not a bare boolean) so an in-place
   // account switch — ownership transfer, multi-account membership —
@@ -103,6 +133,10 @@ export function AiConfig() {
         setAutoReplyEnabled(data.auto_reply_enabled);
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
         setHandoffAgentId(data.handoff_agent_id ?? '');
+        setScheduleEnabled(Boolean(data.schedule_enabled));
+        setScheduleStartMin(data.schedule_start_min ?? 540);
+        setScheduleEndMin(data.schedule_end_min ?? 1260);
+        setScheduleTimezone(data.schedule_timezone ?? 'America/Mexico_City');
         setHasStoredKey(Boolean(data.has_key));
         setApiKey(data.has_key ? MASKED_KEY : '');
         setKeyEdited(false);
@@ -154,6 +188,10 @@ export function AiConfig() {
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
     handoff_agent_id: handoffAgentId || null,
+    schedule_enabled: scheduleEnabled,
+    schedule_start_min: scheduleStartMin,
+    schedule_end_min: scheduleEndMin,
+    schedule_timezone: scheduleTimezone,
   });
 
   const handleTest = async () => {
@@ -196,7 +234,8 @@ export function AiConfig() {
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success(t('saveSuccess'));
+        if (data.warning) toast.warning(data.warning);
+        else toast.success(t('saveSuccess'));
         await fetchConfig();
       } else {
         toast.error(data.error ?? t('saveFailed'));
@@ -222,6 +261,10 @@ export function AiConfig() {
         setAutoReplyEnabled(false);
         setSystemPrompt('');
         setHandoffAgentId('');
+        setScheduleEnabled(false);
+        setScheduleStartMin(540);
+        setScheduleEndMin(1260);
+        setScheduleTimezone('America/Mexico_City');
       } else {
         const data = await res.json();
         toast.error(data.error ?? t('removeFailed'));
@@ -434,6 +477,66 @@ export function AiConfig() {
                 onCheckedChange={setAutoReplyEnabled}
                 disabled={disabled || !isActive}
               />
+            </div>
+
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-foreground">{t('scheduleTitle')}</p>
+                  <p className="text-xs text-muted-foreground">{t('scheduleDesc')}</p>
+                </div>
+                <Switch
+                  checked={scheduleEnabled}
+                  onCheckedChange={setScheduleEnabled}
+                  disabled={disabled || !autoReplyEnabled}
+                />
+              </div>
+              {scheduleEnabled && (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ai-schedule-tz">{t('scheduleTimezone')}</Label>
+                    <Select
+                      value={scheduleTimezone}
+                      onValueChange={(v) => v && setScheduleTimezone(v)}
+                      disabled={disabled || !autoReplyEnabled}
+                    >
+                      <SelectTrigger id="ai-schedule-tz">
+                        <SelectValue>{scheduleTimezone}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(SCHEDULE_TIMEZONES.includes(scheduleTimezone)
+                          ? SCHEDULE_TIMEZONES
+                          : [scheduleTimezone, ...SCHEDULE_TIMEZONES]
+                        ).map((z) => (
+                          <SelectItem key={z} value={z}>
+                            {z}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ai-schedule-start">{t('scheduleFrom')}</Label>
+                    <Input
+                      id="ai-schedule-start"
+                      type="time"
+                      value={toTimeInput(scheduleStartMin)}
+                      onChange={(e) => setScheduleStartMin(fromTimeInput(e.target.value))}
+                      disabled={disabled || !autoReplyEnabled}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ai-schedule-end">{t('scheduleTo')}</Label>
+                    <Input
+                      id="ai-schedule-end"
+                      type="time"
+                      value={toTimeInput(Math.min(scheduleEndMin, 1439))}
+                      onChange={(e) => setScheduleEndMin(fromTimeInput(e.target.value))}
+                      disabled={disabled || !autoReplyEnabled}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-between gap-4">

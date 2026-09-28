@@ -16,6 +16,7 @@ import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage, retrievalQuery } from './query'
 import { detectUnusableReply } from './sanity'
+import { isWithinAiSchedule } from './schedule'
 import { claimMediaSend } from './media-rules'
 import { engineSendText, engineSendMedia } from '@/lib/flows/meta-send'
 import { basenameFromUrl } from '@/lib/media/filename'
@@ -48,6 +49,9 @@ interface DispatchArgs {
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
+  /** Injectable clock, for tests of the on/off schedule below. Defaults
+   *  to the real time. */
+  now?: Date
 }
 
 /**
@@ -137,13 +141,17 @@ function mediaKindForMime(mimeType: string): MediaKind | null {
 export async function dispatchInboundToAiReply(
   args: DispatchArgs,
 ): Promise<void> {
-  const { accountId, conversationId, contactId, configOwnerUserId } = args
+  const { accountId, conversationId, contactId, configOwnerUserId, now = new Date() } = args
 
   try {
     const db = supabaseAdmin()
 
     const config = await loadAiConfig(db, accountId)
     if (!config || !config.autoReplyEnabled) return
+    // Scheduled off-hours: behaves exactly like auto-reply being
+    // switched off — no reply, no handoff, no alert. The message just
+    // sits in the inbox for a human whenever the account opens back up.
+    if (!isWithinAiSchedule(config, now)) return
 
     // Deterministic, user-configured responders win over the LLM — the
     // caller already excludes messages a Flow consumed. Message-level
