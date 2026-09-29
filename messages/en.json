@@ -1576,7 +1576,16 @@
       "step4_3": "Paste the <strong class=\"text-foreground\">Webhook Callback URL</strong> from above",
       "step4_4": "Enter the same <strong class=\"text-foreground\">Verify Token</strong> you set here",
       "step4_5": "Subscribe to \"messages\" webhook field",
-      "metaDocs": "Meta WhatsApp API Documentation"
+      "metaDocs": "Meta WhatsApp API Documentation",
+      "capiTitle": "Meta Ads sale attribution (Conversions API)",
+      "capiDesc": "When a chat that started from a click-to-WhatsApp ad gets the \"Pagado\" tag, wacrm sends a Purchase event to Meta so Ads Manager attributes the sale to that campaign — the same attribution the WhatsApp Business app used to do automatically via \"share data with Meta Ads\".",
+      "capiDatasetId": "Meta Dataset ID",
+      "capiDatasetIdPlaceholder": "e.g. 100234567890789",
+      "capiAccessToken": "Conversions API access token",
+      "capiAccessTokenPlaceholder": "Paste the access token generated for this dataset",
+      "capiTokenHidden": "The token is hidden for security. Re-enter it to change it — leaving it as-is keeps the stored one.",
+      "capiHint": "Needs a <strong class=\"text-foreground\">Dataset</strong> in Meta Events Manager linked to the WhatsApp Business Account above, plus an access token generated for that dataset (Events Manager → Settings → Conversions API). Only contacts that arrived via a click-to-WhatsApp ad carry the click ID needed to attribute — chats that started any other way are skipped automatically.",
+      "capiDocs": "Conversions API for WhatsApp docs"
     },
     "sections": {
       "overview": "Overview",

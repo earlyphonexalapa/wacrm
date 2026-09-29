@@ -5,6 +5,7 @@ import {
   type AutomationContext,
 } from '@/lib/automations/engine';
 import { onContactTagAdded } from '@/lib/followups/enroll';
+import { sendCapiAttributionForTag } from './capi-attribution';
 import { addContactTagIfAbsent } from './tag-write';
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from './tag-chain';
 
@@ -42,6 +43,16 @@ export async function addContactTagAndDispatch(
   // Follow-up sequences enroll / stop on tag changes. Best-effort: it
   // swallows its own errors and must never affect tagging itself.
   await onContactTagAdded({
+    accountId: input.accountId,
+    contactId: input.contactId,
+    tagId: input.tagId,
+  });
+
+  // Meta Conversions API attribution for click-to-WhatsApp ads. Same
+  // best-effort contract as onContactTagAdded above: swallows its own
+  // errors and must never affect tagging itself.
+  await sendCapiAttributionForTag({
+    db: input.db,
     accountId: input.accountId,
     contactId: input.contactId,
     tagId: input.tagId,

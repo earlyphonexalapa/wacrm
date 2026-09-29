@@ -1576,7 +1576,16 @@
       "step4_3": "위의 <strong class=\"text-foreground\">웹훅 콜백 URL</strong>을 붙여넣기",
       "step4_4": "여기서 설정한 것과 동일한 <strong class=\"text-foreground\">인증 토큰</strong>을 입력",
       "step4_5": "\"messages\" 웹훅 필드를 구독",
-      "metaDocs": "Meta WhatsApp API 문서"
+      "metaDocs": "Meta WhatsApp API 문서",
+      "capiTitle": "Meta 광고 판매 어트리뷰션 (Conversions API)",
+      "capiDesc": "클릭 투 왓츠앱 광고로 시작된 대화에 \"Pagado\" 태그가 추가되면, wacrm이 Meta에 구매 이벤트를 전송해 광고 관리자가 해당 캠페인의 판매로 인식하도록 합니다 — 예전에 왓츠앱 비즈니스 앱의 \"Meta 광고와 데이터 공유\" 기능이 자동으로 하던 것과 동일합니다.",
+      "capiDatasetId": "Meta 데이터셋 ID",
+      "capiDatasetIdPlaceholder": "예: 100234567890789",
+      "capiAccessToken": "Conversions API 액세스 토큰",
+      "capiAccessTokenPlaceholder": "이 데이터셋용으로 생성한 액세스 토큰을 붙여넣으세요",
+      "capiTokenHidden": "보안을 위해 토큰이 숨겨져 있습니다. 변경하려면 다시 입력하세요 — 그대로 두면 저장된 값이 유지됩니다.",
+      "capiHint": "위의 왓츠앱 비즈니스 계정과 연결된 Meta 이벤트 관리자의 <strong class=\"text-foreground\">데이터셋</strong>과, 해당 데이터셋용으로 생성한 액세스 토큰(이벤트 관리자 → 설정 → Conversions API)이 필요합니다. 클릭 투 왓츠앱 광고를 통해 유입된 연락처만 어트리뷰션에 필요한 클릭 ID를 가지고 있으며, 다른 방식으로 시작된 대화는 자동으로 건너뜁니다.",
+      "capiDocs": "왓츠앱용 Conversions API 문서"
     },
     "sections": {
       "overview": "개요",

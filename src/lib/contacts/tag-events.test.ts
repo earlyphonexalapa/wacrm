@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   add: vi.fn(),
   dispatch: vi.fn(),
+  capi: vi.fn(),
 }));
 
 vi.mock('./tag-write', () => ({
@@ -15,6 +16,10 @@ vi.mock('@/lib/automations/engine', () => ({
 
 vi.mock('@/lib/followups/enroll', () => ({
   onContactTagAdded: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('./capi-attribution', () => ({
+  sendCapiAttributionForTag: mocks.capi,
 }));
 
 import {
@@ -34,6 +39,8 @@ beforeEach(() => {
   mocks.add.mockReset();
   mocks.dispatch.mockReset();
   mocks.dispatch.mockResolvedValue(undefined);
+  mocks.capi.mockReset();
+  mocks.capi.mockResolvedValue({ sent: false, reason: 'tag_not_configured' });
 });
 
 describe('addContactTagAndDispatch', () => {
@@ -46,6 +53,12 @@ describe('addContactTagAndDispatch', () => {
     });
 
     expect(result).toEqual({ added: true, dispatched: true });
+    expect(mocks.capi).toHaveBeenCalledWith({
+      db: base.db,
+      accountId: 'account-1',
+      contactId: 'contact-1',
+      tagId: 'tag-1',
+    });
     expect(mocks.dispatch).toHaveBeenCalledWith({
       accountId: 'account-1',
       triggerType: 'tag_added',
@@ -66,6 +79,7 @@ describe('addContactTagAndDispatch', () => {
       reason: 'duplicate',
     });
     expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.capi).not.toHaveBeenCalled();
   });
 
   it('adds the tag but cuts a chain at the configured depth limit', async () => {

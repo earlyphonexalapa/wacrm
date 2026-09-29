@@ -298,6 +298,19 @@ export interface WhatsAppConfig {
    * inbound attachments expire. Migration 039.
    */
   mirror_inbound_media?: boolean;
+  /**
+   * Meta Conversions API dataset (from Events Manager) used to send
+   * "Pagado" purchase attribution for click-to-WhatsApp ads. Migration
+   * 053. Not secret — safe to read back into the settings form as-is.
+   */
+  capi_dataset_id?: string | null;
+  /**
+   * AES-256-GCM encrypted CAPI access token, same scheme as
+   * `access_token`. Never decrypted client-side — the settings form
+   * only checks for presence to decide whether to show a masked
+   * placeholder.
+   */
+  capi_access_token?: string | null;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)

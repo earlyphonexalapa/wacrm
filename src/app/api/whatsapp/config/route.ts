@@ -185,7 +185,15 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { phone_number_id, waba_id, access_token, verify_token, pin } = body
+    const {
+      phone_number_id,
+      waba_id,
+      access_token,
+      verify_token,
+      pin,
+      capi_access_token,
+      capi_dataset_id,
+    } = body
 
     if (!access_token || !phone_number_id) {
       return NextResponse.json(
@@ -350,10 +358,23 @@ export async function POST(request: Request) {
       }
     }
 
+    // CAPI (Meta Conversions API) credentials for "Pagado"-tag purchase
+    // attribution on click-to-WhatsApp ads — see migration 053. Unlike
+    // access_token above, this token needs no round-trip to Meta to
+    // verify, so it follows the ai-config "reuse unless touched"
+    // pattern instead of forcing re-entry on every save: a non-empty
+    // string sets/replaces it, an explicit null clears it, and leaving
+    // the field out of the request body keeps whatever is already
+    // stored. capi_dataset_id is not secret and is always overwritten
+    // from the form, like waba_id above.
+    const rawCapiToken =
+      typeof capi_access_token === 'string' ? capi_access_token.trim() : ''
+    const clearCapiToken = capi_access_token === null
+
     // Persist everything in one shot. If /register failed we still
     // store the credentials and the error so the UI can guide the
     // user through a retry.
-    const baseRow = {
+    const baseRow: Record<string, unknown> = {
       phone_number_id,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,
@@ -364,13 +385,41 @@ export async function POST(request: Request) {
       subscribed_apps_at: subscribedAppsAt ?? null,
       last_registration_error: registrationError,
       updated_at: new Date().toISOString(),
+      capi_dataset_id:
+        typeof capi_dataset_id === 'string'
+          ? capi_dataset_id.trim() || null
+          : null,
+    }
+    if (rawCapiToken) {
+      baseRow.capi_access_token = encrypt(rawCapiToken)
+    } else if (clearCapiToken) {
+      baseRow.capi_access_token = null
     }
 
+    // capi_* fall back the same way as the AI schedule columns did in
+    // migration 052: if 053 hasn't run yet, save everything else
+    // rather than failing the whole form on an unrelated column.
+    const withoutCapi = (fields: Record<string, unknown>) => {
+      const { capi_access_token: _1, capi_dataset_id: _2, ...rest } = fields
+      void _1
+      void _2
+      return rest
+    }
+    let capiSkipped = false
+
     if (existing) {
-      const { error: updateError } = await supabase
+      let { error: updateError } = await supabase
         .from('whatsapp_config')
         .update(baseRow)
         .eq('account_id', accountId)
+
+      if (updateError?.message?.includes('capi_')) {
+        capiSkipped = true
+        ;({ error: updateError } = await supabase
+          .from('whatsapp_config')
+          .update(withoutCapi(baseRow))
+          .eq('account_id', accountId))
+      }
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
@@ -384,13 +433,24 @@ export async function POST(request: Request) {
       // (NOT NULL post-017, UNIQUE so duplicates trip the constraint
       // up-front), `user_id` is the audit column identifying which
       // member of the account saved the config.
-      const { error: insertError } = await supabase
+      let { error: insertError } = await supabase
         .from('whatsapp_config')
         .insert({
           account_id: accountId,
           user_id: user.id,
           ...baseRow,
         })
+
+      if (insertError?.message?.includes('capi_')) {
+        capiSkipped = true
+        ;({ error: insertError } = await supabase
+          .from('whatsapp_config')
+          .insert({
+            account_id: accountId,
+            user_id: user.id,
+            ...withoutCapi(baseRow),
+          }))
+      }
 
       if (insertError) {
         console.error('Error inserting whatsapp_config:', insertError)
@@ -400,6 +460,10 @@ export async function POST(request: Request) {
         )
       }
     }
+
+    const capiWarning = capiSkipped
+      ? 'Guardado, pero la atribución a Meta Ads necesita la última actualización de la base de datos (migración 053).'
+      : undefined
 
     if (registrationError) {
       // Save succeeded but the number isn't actually live. Return
@@ -411,6 +475,7 @@ export async function POST(request: Request) {
         registered: false,
         registration_error: registrationError,
         phone_info: phoneInfo,
+        warning: capiWarning,
       })
     }
 
@@ -424,6 +489,7 @@ export async function POST(request: Request) {
       // rather than claiming the number is fully live.
       registration_skipped: registrationSkipped,
       phone_info: phoneInfo,
+      warning: capiWarning,
     })
   } catch (error) {
     console.error('Error in WhatsApp config POST:', error)

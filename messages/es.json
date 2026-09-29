@@ -1576,7 +1576,16 @@
       "step4_3": "Pega la <strong class=\"text-foreground\">URL de callback del webhook</strong> de arriba",
       "step4_4": "Escribe el mismo <strong class=\"text-foreground\">token de verificación</strong> que definiste aquí",
       "step4_5": "Suscríbete al campo de webhook \"messages\"",
-      "metaDocs": "Documentación de la API de WhatsApp de Meta"
+      "metaDocs": "Documentación de la API de WhatsApp de Meta",
+      "capiTitle": "Atribución de ventas a Meta Ads (Conversions API)",
+      "capiDesc": "Cuando una conversación que inició desde un anuncio de clic a WhatsApp recibe la etiqueta \"Pagado\", wacrm manda un evento de compra a Meta para que el Administrador de anuncios atribuya la venta a esa campaña — la misma atribución que la app de WhatsApp Business hacía automáticamente con \"uso compartido con Meta Ads\".",
+      "capiDatasetId": "ID del Dataset de Meta",
+      "capiDatasetIdPlaceholder": "ej. 100234567890789",
+      "capiAccessToken": "Token de acceso de la Conversions API",
+      "capiAccessTokenPlaceholder": "Pega el token de acceso generado para este dataset",
+      "capiTokenHidden": "El token está oculto por seguridad. Vuelve a escribirlo para cambiarlo — si lo dejas así se conserva el guardado.",
+      "capiHint": "Necesitas un <strong class=\"text-foreground\">Dataset</strong> en el Events Manager de Meta vinculado a la cuenta de WhatsApp Business de arriba, además de un token de acceso generado para ese dataset (Events Manager → Configuración → Conversions API). Solo los contactos que llegaron desde un anuncio de clic a WhatsApp traen el ID de clic necesario para atribuir — las conversaciones que empezaron de otra forma se omiten automáticamente.",
+      "capiDocs": "Documentación de la Conversions API para WhatsApp"
     },
     "sections": {
       "overview": "Resumen",

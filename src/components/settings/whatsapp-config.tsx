@@ -13,6 +13,7 @@ import {
   Zap,
   AlertTriangle,
   RotateCcw,
+  Target,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -76,6 +77,16 @@ export function WhatsAppConfig() {
   const [verifyToken, setVerifyToken] = useState('');
   const [pin, setPin] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
+
+  // Meta Conversions API attribution ("Pagado" tag → Purchase event for
+  // click-to-WhatsApp ads). Unlike accessToken above, this token isn't
+  // re-verified with Meta on save, so it follows the "reuse unless
+  // touched" pattern: masked placeholder when already set, only sent
+  // to the server when the admin actually edits it.
+  const [capiDatasetId, setCapiDatasetId] = useState('');
+  const [capiAccessToken, setCapiAccessToken] = useState('');
+  const [capiTokenEdited, setCapiTokenEdited] = useState(false);
+  const [showCapiToken, setShowCapiToken] = useState(false);
 
   // Inbound-media mirror (issue #466). Unlike everything else on this
   // page it is NOT part of handleSave: that path insists on re-entering
@@ -141,6 +152,9 @@ export function WhatsAppConfig() {
         // Undefined on a row read before migration 039 — treat that as
         // on, matching the webhook's own default.
         setMirrorMedia(data.mirror_inbound_media !== false);
+        setCapiDatasetId(data.capi_dataset_id || '');
+        setCapiAccessToken(data.capi_access_token ? MASKED_TOKEN : '');
+        setCapiTokenEdited(false);
       } else {
         setConfig(null);
         setPhoneNumberId('');
@@ -150,6 +164,9 @@ export function WhatsAppConfig() {
         setPin('');
         setTokenEdited(false);
         setMirrorMedia(true);
+        setCapiDatasetId('');
+        setCapiAccessToken('');
+        setCapiTokenEdited(false);
       }
       // Clear any stale probe result when reloading the row.
       setRegistrationProbe(null);
@@ -251,7 +268,16 @@ export function WhatsAppConfig() {
         // requires it on first save or when changing numbers; for a
         // simple token rotation, leaving it blank skips re-register.
         pin: pin.trim() || null,
+        // Not secret — always sent, like waba_id above.
+        capi_dataset_id: capiDatasetId.trim() || null,
       };
+
+      // Only sent when the admin actually edited it: an empty value
+      // here means "clear the stored token", so it must never be sent
+      // just because the field renders a masked placeholder.
+      if (capiTokenEdited) {
+        payload.capi_access_token = capiAccessToken.trim() || null;
+      }
 
       if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
         payload.access_token = accessToken.trim();
@@ -285,6 +311,8 @@ export function WhatsAppConfig() {
       //                         failed; UI shows the specific error
       //                         and a retry path. registration_error
       //                         is human-readable from Meta.
+      if (data.warning) toast.warning(data.warning);
+
       if (data.registered === false && data.registration_error) {
         toast.error(
           `Saved, but Meta couldn't register the number: ${data.registration_error}`,
@@ -399,6 +427,9 @@ export function WhatsAppConfig() {
       setAccessToken('');
       setVerifyToken('');
       setTokenEdited(false);
+      setCapiDatasetId('');
+      setCapiAccessToken('');
+      setCapiTokenEdited(false);
       setConnectionStatus('disconnected');
       setResetReason(null);
       setStatusMessage('');
@@ -763,6 +794,76 @@ export function WhatsAppConfig() {
             </CardContent>
           </Card>
         )}
+
+        {/* Meta Conversions API attribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-foreground flex items-center gap-2">
+              <Target className="size-4 text-primary" />
+              {t('capiTitle')}
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">
+              {t('capiDesc')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">{t('capiDatasetId')}</Label>
+              <Input
+                placeholder={t('capiDatasetIdPlaceholder')}
+                value={capiDatasetId}
+                onChange={(e) => setCapiDatasetId(e.target.value)}
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">{t('capiAccessToken')}</Label>
+              <div className="relative">
+                <Input
+                  type={showCapiToken ? 'text' : 'password'}
+                  placeholder={t('capiAccessTokenPlaceholder')}
+                  value={capiAccessToken}
+                  onChange={(e) => {
+                    setCapiAccessToken(e.target.value);
+                    setCapiTokenEdited(true);
+                  }}
+                  onFocus={() => {
+                    if (capiAccessToken === MASKED_TOKEN) {
+                      setCapiAccessToken('');
+                      setCapiTokenEdited(true);
+                    }
+                  }}
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCapiToken(!showCapiToken)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showCapiToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+              {config?.capi_access_token && !capiTokenEdited && (
+                <p className="text-xs text-muted-foreground">{t('capiTokenHidden')}</p>
+              )}
+            </div>
+
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <span dangerouslySetInnerHTML={{ __html: t.raw('capiHint') }} />
+            </p>
+
+            <a
+              href="https://developers.facebook.com/docs/marketing-api/conversions-api/guides/whatsapp"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
+            >
+              <ExternalLink className="size-3.5" />
+              {t('capiDocs')}
+            </a>
+          </CardContent>
+        </Card>
 
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-3">
