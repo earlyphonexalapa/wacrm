@@ -5,11 +5,13 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
 import {
+  Download,
   MessageSquare,
   UserPlus,
   DollarSign,
   Send,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 import {
   loadActivity,
@@ -35,12 +37,14 @@ import type {
   PipelineDonutData,
   ResponseTimeSummary,
 } from '@/lib/dashboard/types'
+import { buildPeriodCsv, periodExportFileName } from '@/lib/dashboard/export'
+import { downloadTextFile } from '@/lib/exports/format'
 
 import { MetricCard } from '@/components/dashboard/metric-card'
 import { SkeletonCard } from '@/components/dashboard/skeleton'
 import { QuickActions } from '@/components/dashboard/quick-actions'
 import { ConversationsChart } from '@/components/dashboard/conversations-chart'
-import { PeriodFilter } from '@/components/dashboard/period-filter'
+import { PeriodFilter, PRESET_KEY } from '@/components/dashboard/period-filter'
 import { PeriodSummary } from '@/components/dashboard/period-summary'
 import { NewContactsChart } from '@/components/dashboard/new-contacts-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
@@ -187,6 +191,43 @@ export default function DashboardPage() {
     return periodView.from === periodView.to ? fmt(periodView.from) : fmt(periodView.from) + ' – ' + fmt(periodView.to)
   }, [periodView.from, periodView.to, locale])
 
+  // Exports the daily points (never the week/month buckets the charts
+  // switch to on long ranges), so the file always has one row per day.
+  const handleExport = useCallback(() => {
+    if (!periodPoints || periodPoints.length === 0) return
+    const csv = buildPeriodCsv({
+      points: periodPoints,
+      periodLabel: tp(PRESET_KEY[selection.preset] as never),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      generatedAt: new Date().toLocaleString(locale),
+      labels: {
+        title: tp('exportTitle'),
+        period: tp('label'),
+        from: tp('from'),
+        to: tp('to'),
+        days: tp('exportDays'),
+        timezone: tp('exportTimezone'),
+        generated: tp('exportGenerated'),
+        totalSection: tp('exportTotalSection'),
+        metric: tp('exportMetric'),
+        total: tp('exportTotal'),
+        avgPerDay: tp('exportAvgPerDay'),
+        dailySection: tp('exportDailySection'),
+        date: tp('exportDate'),
+        newContacts: tp('newContacts'),
+        newConversations: tp('newConversations'),
+        messagesIn: tp('messagesIn'),
+        messagesOut: tp('messagesOut'),
+      },
+    })
+    downloadTextFile(
+      periodExportFileName(periodPoints[0].day, periodPoints[periodPoints.length - 1].day),
+      csv,
+      'text/csv;charset=utf-8;',
+    )
+    toast.success(tp('exportDone'))
+  }, [periodPoints, selection.preset, tp, locale])
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -200,11 +241,20 @@ export default function DashboardPage() {
       {/* Date filter + period summary */}
       <div className="space-y-4">
         <PeriodFilter key={selectionRestored ? 'restored' : 'initial'} value={selection} onChange={handleSelectionChange} />
-        {rangeText && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
-            {tp('showing', { range: rangeText, days: periodView.days })}
+            {rangeText && tp('showing', { range: rangeText, days: periodView.days })}
           </p>
-        )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={periodLoading || !periodPoints || periodPoints.length === 0}
+          >
+            <Download className="size-4" />
+            {tp('exportButton')}
+          </Button>
+        </div>
         <PeriodSummary
           loading={periodLoading}
           totals={periodView.totals}

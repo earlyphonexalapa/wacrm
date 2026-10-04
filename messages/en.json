@@ -174,7 +174,19 @@
       "noContactsHint": "Try a wider date range.",
       "hoverHint": "Hover a bar to see the exact number.",
       "tooltip": "{label}: {count, plural, one {# new contact} other {# new contacts}}",
-      "weekOf": "Week of {date}"
+      "weekOf": "Week of {date}",
+      "exportButton": "Export",
+      "exportDone": "Metrics exported",
+      "exportTitle": "Dashboard metrics",
+      "exportDays": "Days",
+      "exportTimezone": "Time zone",
+      "exportGenerated": "Generated",
+      "exportTotalSection": "Period total",
+      "exportMetric": "Metric",
+      "exportTotal": "Total",
+      "exportAvgPerDay": "Average per day",
+      "exportDailySection": "Daily breakdown",
+      "exportDate": "Date"
     }
   },
   "Inbox": {

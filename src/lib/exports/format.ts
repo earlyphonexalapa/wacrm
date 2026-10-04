@@ -43,7 +43,7 @@ function directionLabel(labels: ExportLabels, sender: string): string {
 }
 
 /** RFC 4180 quoting — every field is quoted so commas/newlines/quotes round-trip cleanly. */
-function csvField(value: string): string {
+export function csvField(value: string): string {
   return `"${value.replace(/"/g, '""')}"`
 }
 

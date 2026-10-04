@@ -15,7 +15,7 @@ import {
   type PeriodSelection,
 } from '@/lib/dashboard/period'
 
-const PRESET_KEY: Record<PeriodPreset, string> = {
+export const PRESET_KEY: Record<PeriodPreset, string> = {
   today: 'presetToday',
   yesterday: 'presetYesterday',
   '3d': 'preset3d',

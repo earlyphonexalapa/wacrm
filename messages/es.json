@@ -174,7 +174,19 @@
       "noContactsHint": "Prueba con un rango de fechas más amplio.",
       "hoverHint": "Pasa el cursor sobre una barra para ver la cifra exacta.",
       "tooltip": "{label}: {count, plural, one {# contacto nuevo} other {# contactos nuevos}}",
-      "weekOf": "Semana del {date}"
+      "weekOf": "Semana del {date}",
+      "exportButton": "Exportar",
+      "exportDone": "Métricas exportadas",
+      "exportTitle": "Métricas del Panel",
+      "exportDays": "Días",
+      "exportTimezone": "Zona horaria",
+      "exportGenerated": "Generado",
+      "exportTotalSection": "Total del período",
+      "exportMetric": "Métrica",
+      "exportTotal": "Total",
+      "exportAvgPerDay": "Promedio por día",
+      "exportDailySection": "Detalle por día",
+      "exportDate": "Fecha"
     }
   },
   "Inbox": {
