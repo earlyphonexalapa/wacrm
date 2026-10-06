@@ -9,11 +9,11 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 /**
  * GET /api/routing/campaigns  (admin)
  *
- * The active and paused campaigns Meta shows for the saved token, each
- * with the closer a rule already gives it (if any) — feeds the "pick a
- * campaign" box on the settings screen.
+ * The campaigns Meta shows for the saved token — only the switched-on ones
+ * unless `?paused=1` — each with the closer a rule already gives it (if
+ * any). Feeds the "pick a campaign" box on the settings screen.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const { supabase, accountId, userId } = await requireRole('admin')
 
@@ -37,7 +37,8 @@ export async function GET() {
 
     let campaigns
     try {
-      campaigns = await listCampaigns(token)
+      const includePaused = new URL(request.url).searchParams.get('paused') === '1'
+      campaigns = await listCampaigns(token, { includePaused })
     } catch (err) {
       return NextResponse.json(
         { error: `Meta did not return the campaigns: ${err instanceof Error ? err.message : 'unknown error'}` },

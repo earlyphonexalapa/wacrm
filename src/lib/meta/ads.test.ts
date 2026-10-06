@@ -76,6 +76,25 @@ describe('listCampaigns / validateAdsToken', () => {
     expect(await validateAdsToken('tok')).toEqual({ adAccounts: 1 })
   })
 
+  it('asks for switched-on campaigns only unless paused ones are requested', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(decodeURIComponent(url));
+        if (url.includes('/me/adaccounts')) return jsonResponse({ data: [{ id: 'act_1', name: 'Cuenta 1' }] });
+        return jsonResponse({ data: [] });
+      }),
+    );
+
+    await listCampaigns('tok');
+    await listCampaigns('tok', { includePaused: true });
+
+    const campaignCalls = urls.filter((u) => u.includes('/act_1/campaigns'));
+    expect(campaignCalls[0]).toContain('effective_status=["ACTIVE"]');
+    expect(campaignCalls[1]).toContain('effective_status=["ACTIVE","PAUSED"]');
+  });
+
   it('falls back to the assigned-accounts edge for system-user tokens', async () => {
     vi.stubGlobal(
       'fetch',

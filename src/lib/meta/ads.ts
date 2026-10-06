@@ -110,10 +110,13 @@ export async function validateAdsToken(
   return { adAccounts: accounts.length }
 }
 
-/** Active and paused campaigns across the ad accounts the token can read. */
+/**
+ * Campaigns across the ad accounts the token can read. Only the ones that
+ * are switched on, unless `includePaused` is set.
+ */
 export async function listCampaigns(
   accessToken: string,
-  timeoutMs = 10000,
+  { includePaused = false, timeoutMs = 10000 }: { includePaused?: boolean; timeoutMs?: number } = {},
 ): Promise<ListedCampaign[]> {
   const accounts = (await listAdAccounts(accessToken, timeoutMs)).slice(0, 10)
 
@@ -126,7 +129,7 @@ export async function listCampaigns(
           `/${account.id}/campaigns`,
           {
             fields: 'id,name,effective_status',
-            effective_status: JSON.stringify(['ACTIVE', 'PAUSED']),
+            effective_status: JSON.stringify(includePaused ? ['ACTIVE', 'PAUSED'] : ['ACTIVE']),
             limit: '100',
           },
           accessToken,

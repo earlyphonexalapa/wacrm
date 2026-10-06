@@ -1957,7 +1957,7 @@
       "campaignLabel": "Campaña",
       "campaignPlaceholder": "Elige una campaña",
       "campaignMapped": "ya asignada",
-      "campaignsNone": "Meta no devolvió campañas activas o pausadas.",
+      "campaignsNone": "Meta no devolvió campañas encendidas. Prueba incluyendo las pausadas.",
       "summaryTitle": "Cómo se está repartiendo",
       "summaryDays": "Últimos {days} días",
       "summaryNoData": "Aún no hay conversaciones nuevas en este período.",
@@ -1985,7 +1985,8 @@
       "assign": "Asignar",
       "leadsCount": "{count, plural, one {# lead} other {# leads}}",
       "unknownCloser": "Alguien",
-      "unnamedCampaign": "Campaña sin nombre"
+      "unnamedCampaign": "Campaña sin nombre",
+      "includePaused": "Incluir campañas pausadas"
     }
   },
   "Followups": {

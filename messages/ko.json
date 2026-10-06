@@ -1957,7 +1957,7 @@
       "campaignLabel": "캠페인",
       "campaignPlaceholder": "캠페인 선택",
       "campaignMapped": "이미 배정됨",
-      "campaignsNone": "Meta에서 활성 또는 일시중지된 캠페인을 받지 못했습니다.",
+      "campaignsNone": "Meta에서 활성 캠페인을 받지 못했습니다. 일시중지된 캠페인을 포함해 보세요.",
       "summaryTitle": "배분 현황",
       "summaryDays": "최근 {days}일",
       "summaryNoData": "이 기간에는 새 대화가 없습니다.",
@@ -1985,7 +1985,8 @@
       "assign": "지정",
       "leadsCount": "리드 {count}건",
       "unknownCloser": "누군가",
-      "unnamedCampaign": "이름 없는 캠페인"
+      "unnamedCampaign": "이름 없는 캠페인",
+      "includePaused": "일시중지된 캠페인 포함"
     }
   },
   "Followups": {

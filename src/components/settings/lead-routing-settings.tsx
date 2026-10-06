@@ -82,6 +82,7 @@ export function LeadRoutingSettings() {
   const [nameCloser, setNameCloser] = useState('');
   const [campaigns, setCampaigns] = useState<CampaignRow[] | null>(null);
   const [campaignsLoading, setCampaignsLoading] = useState(false);
+  const [includePaused, setIncludePaused] = useState(false);
   const [campaignId, setCampaignId] = useState('');
   const [campaignCloser, setCampaignCloser] = useState('');
 
@@ -198,9 +199,11 @@ export function LeadRoutingSettings() {
     await load();
   }
 
-  async function loadCampaigns() {
+  async function loadCampaigns(paused = includePaused) {
     setCampaignsLoading(true);
-    const { ok, data: res } = await api<{ campaigns?: CampaignRow[] }>('/api/routing/campaigns');
+    const { ok, data: res } = await api<{ campaigns?: CampaignRow[] }>(
+      `/api/routing/campaigns${paused ? '?paused=1' : ''}`,
+    );
     setCampaignsLoading(false);
     if (!ok) return void toast.error(res.error ?? t('loadFailed'));
     setCampaigns(res.campaigns ?? []);
@@ -469,14 +472,28 @@ export function LeadRoutingSettings() {
             <div className="space-y-3 rounded-md border border-border p-3">
               <p className="text-sm font-medium text-foreground">{t('addByCampaignTitle')}</p>
               {campaigns === null ? (
-                <Button variant="outline" onClick={loadCampaigns} disabled={campaignsLoading || !data.has_token}>
+                <Button variant="outline" onClick={() => loadCampaigns()} disabled={campaignsLoading || !data.has_token}>
                   {campaignsLoading && <Loader2 className="size-4 animate-spin" />}
                   {campaignsLoading ? t('campaignsLoading') : t('loadCampaigns')}
                 </Button>
-              ) : campaigns.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{t('campaignsNone')}</p>
               ) : (
                 <>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Switch
+                      checked={includePaused}
+                      disabled={campaignsLoading}
+                      onCheckedChange={(v) => {
+                        setIncludePaused(v);
+                        setCampaignId('');
+                        void loadCampaigns(v);
+                      }}
+                    />
+                    {t('includePaused')}
+                  </label>
+                  {campaigns.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{t('campaignsNone')}</p>
+                  ) : (
+                    <>
                   <CloserSelect
                     id="routing-campaign"
                     label={t('campaignLabel')}
@@ -499,6 +516,8 @@ export function LeadRoutingSettings() {
                   <Button onClick={addCampaignRule} disabled={busy === 'rule' || !campaignId || !campaignCloser}>
                     {t('addRule')}
                   </Button>
+                    </>
+                  )}
                 </>
               )}
             </div>

@@ -1957,7 +1957,7 @@
       "campaignLabel": "Campaign",
       "campaignPlaceholder": "Choose a campaign",
       "campaignMapped": "already assigned",
-      "campaignsNone": "Meta returned no active or paused campaigns.",
+      "campaignsNone": "Meta returned no active campaigns. Try including the paused ones.",
       "summaryTitle": "How leads are being spread",
       "summaryDays": "Last {days} days",
       "summaryNoData": "No new conversations in this period yet.",
@@ -1985,7 +1985,8 @@
       "assign": "Assign",
       "leadsCount": "{count, plural, one {# lead} other {# leads}}",
       "unknownCloser": "Someone",
-      "unnamedCampaign": "Unnamed campaign"
+      "unnamedCampaign": "Unnamed campaign",
+      "includePaused": "Include paused campaigns"
     }
   },
   "Followups": {
