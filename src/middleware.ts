@@ -1,5 +1,66 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import {
+  decideMfaGate,
+  MFA_COOKIE,
+  sessionIdFromAccessToken,
+  userHasVerifiedTotp,
+  verifyGateCookie,
+} from '@/lib/auth/mfa-gate'
+
+/**
+ * Two-step verification gate (see src/lib/auth/mfa-gate.ts). Returns a
+ * response when the request must be stopped — a redirect to /2fa for pages,
+ * a 401 for API calls — or null to carry on. Does nothing at all for a user
+ * without an authenticator unless REQUIRE_2FA=1, so it can't lock anyone out
+ * before they have set one up. DISABLE_2FA_GATE=1 is the emergency off switch.
+ */
+async function applyMfaGate(
+  request: NextRequest,
+  supabase: ReturnType<typeof createServerClient>,
+  user: { id: string; factors?: { factor_type?: string; status?: string }[] | null },
+): Promise<NextResponse | null> {
+  const secret = process.env.ENCRYPTION_KEY
+  const hasVerifiedFactor = userHasVerifiedTotp(user)
+  const requireEnrollment = process.env.REQUIRE_2FA === '1'
+  if (!secret || process.env.DISABLE_2FA_GATE === '1') return null
+  if (!hasVerifiedFactor && !requireEnrollment) return null
+
+  let cookieValid = false
+  if (hasVerifiedFactor) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    cookieValid = await verifyGateCookie(request.cookies.get(MFA_COOKIE)?.value, {
+      userId: user.id,
+      sessionId: sessionIdFromAccessToken(session?.access_token),
+      secret,
+    })
+  }
+
+  const { pathname, search } = request.nextUrl
+  const decision = decideMfaGate({
+    pathname,
+    hasVerifiedFactor,
+    cookieValid,
+    requireEnrollment,
+    bypass: false,
+  })
+  if (decision === 'allow') return null
+  if (decision === 'deny-api') {
+    return NextResponse.json(
+      { error: 'Two-step verification required', code: 'mfa_required' },
+      { status: 401 },
+    )
+  }
+
+  const url = request.nextUrl.clone()
+  url.pathname = '/2fa'
+  url.search = ''
+  url.searchParams.set('next', pathname + search)
+  if (decision === 'setup') url.searchParams.set('setup', '1')
+  return NextResponse.redirect(url)
+}
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -67,6 +128,13 @@ export async function middleware(request: NextRequest) {
       url.search = ''
     }
     return withRefreshedCookies(NextResponse.redirect(url))
+  }
+
+  // Two-step verification: a signed-in user must have entered their
+  // authenticator code in this browser session (see mfa-gate.ts).
+  if (user) {
+    const gate = await applyMfaGate(request, supabase, user)
+    if (gate) return withRefreshedCookies(gate)
   }
 
   // Protected pages - redirect to login if not authenticated

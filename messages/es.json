@@ -2229,5 +2229,30 @@
     "exportSuccess": "{count, plural, one {Se exportó # chat.} other {Se exportaron # chats.}}",
     "exportPartial": "Solo se pudieron exportar {got} de {wanted} chats: puede que el resto se haya eliminado o movido a otra cuenta.",
     "exportFailed": "Falló la exportación. No se descargó nada: inténtalo de nuevo."
+  },
+  "TwoFactor": {
+    "verifyTitle": "Ingresa tu código",
+    "verifyDesc": "Abre tu app de autenticación (Google Authenticator, Authy, 1Password…) y escribe el código de 6 dígitos de WaCRM.",
+    "setupTitle": "Activa la verificación en dos pasos",
+    "setupDesc": "Para entrar al CRM necesitas una app de autenticación. Escanea el código QR y escribe el código de 6 dígitos que te muestra.",
+    "scanHint": "Escanea este código QR con tu app de autenticación.",
+    "manualHint": "¿No puedes escanear? Escribe esta clave en la app:",
+    "codeLabel": "Código de 6 dígitos",
+    "verify": "Verificar",
+    "verifying": "Verificando…",
+    "cancel": "Cancelar",
+    "signOut": "Cerrar sesión",
+    "invalidCode": "Ese código no es válido. Revisa tu app e inténtalo de nuevo.",
+    "tooMany": "Demasiados intentos. Espera un minuto e inténtalo otra vez.",
+    "loadFailed": "No se pudo preparar la verificación. Recarga la página.",
+    "cardTitle": "Verificación en dos pasos",
+    "cardDesc": "Con esto activo, cada vez que abras el CRM te pedirá el código de tu app de autenticación. Tu sesión sigue guardada en este navegador; el código se pide al abrir.",
+    "statusOn": "Activada",
+    "statusOff": "Desactivada",
+    "enable": "Activar",
+    "disable": "Desactivar",
+    "disableDesc": "Escribe un código actual de tu app para desactivarla.",
+    "enabledToast": "Verificación en dos pasos activada.",
+    "disabledToast": "Verificación en dos pasos desactivada."
   }
 }

@@ -179,6 +179,10 @@ export const RATE_LIMITS = {
    *  minute. 40/min covers that comfortably while still bounding a
    *  script hammering the endpoint directly. */
   exportBatch: { limit: 40, windowMs: 60_000 },
+  /** Authenticator-code attempts (verify / disable). A 6-digit code has a
+   *  million values and Supabase rate-limits the check too; 8/min per user
+   *  is plenty for typos and nowhere near enough to brute-force. */
+  mfaVerify: { limit: 8, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

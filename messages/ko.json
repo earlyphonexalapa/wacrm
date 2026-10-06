@@ -2229,5 +2229,30 @@
     "exportSuccess": "{count}개 채팅을 내보냈습니다.",
     "exportPartial": "{wanted}개 중 {got}개만 내보낼 수 있었습니다. 나머지는 삭제되었거나 다른 계정으로 이동되었을 수 있습니다.",
     "exportFailed": "내보내기에 실패했습니다. 아무것도 다운로드되지 않았습니다 — 다시 시도하세요."
+  },
+  "TwoFactor": {
+    "verifyTitle": "코드를 입력하세요",
+    "verifyDesc": "인증 앱(Google Authenticator, Authy, 1Password 등)을 열고 WaCRM의 6자리 코드를 입력하세요.",
+    "setupTitle": "2단계 인증 켜기",
+    "setupDesc": "CRM에 로그인하려면 인증 앱이 필요합니다. QR 코드를 스캔한 뒤 앱에 표시된 6자리 코드를 입력하세요.",
+    "scanHint": "인증 앱으로 이 QR 코드를 스캔하세요.",
+    "manualHint": "스캔할 수 없나요? 앱에 이 키를 입력하세요:",
+    "codeLabel": "6자리 코드",
+    "verify": "확인",
+    "verifying": "확인 중…",
+    "cancel": "취소",
+    "signOut": "로그아웃",
+    "invalidCode": "코드가 올바르지 않습니다. 앱을 확인하고 다시 시도하세요.",
+    "tooMany": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요.",
+    "loadFailed": "인증을 준비하지 못했습니다. 페이지를 새로고침하세요.",
+    "cardTitle": "2단계 인증",
+    "cardDesc": "켜면 CRM을 열 때마다 인증 앱의 코드를 요청합니다. 로그인 상태는 이 브라우저에 유지되며, 열 때 코드만 확인합니다.",
+    "statusOn": "켜짐",
+    "statusOff": "꺼짐",
+    "enable": "켜기",
+    "disable": "끄기",
+    "disableDesc": "끄려면 앱의 현재 코드를 입력하세요.",
+    "enabledToast": "2단계 인증이 켜졌습니다.",
+    "disabledToast": "2단계 인증이 꺼졌습니다."
   }
 }
