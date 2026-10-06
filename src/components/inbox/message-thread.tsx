@@ -172,6 +172,21 @@ export function MessageThread({
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Conversation whose messages are currently in state, and the one the
+  // fetch effect last ran for. Together they tell a conversation switch
+  // (show the spinner) apart from a background refetch (update in place).
+  const loadedConversationRef = useRef<string | null>(null);
+  const fetchedConversationRef = useRef<string | null>(null);
+  // Conversation + newest message id as of the last auto-scroll decision.
+  const scrollStateRef = useRef<{ conversationId: string | null; lastId: string | null }>({
+    conversationId: null,
+    lastId: null,
+  });
+  // Whether the reader was at (or near) the bottom as of their last scroll.
+  // Tracked from scroll events rather than measured when a message lands,
+  // because by then the new bubble has already grown the list — a tall one
+  // would make a reader sitting at the bottom look far from it.
+  const nearBottomRef = useRef(true);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
@@ -296,8 +311,18 @@ export function MessageThread({
     const supabase = createClient();
     let cancelled = false;
 
+    if (fetchedConversationRef.current !== conversationId) {
+      fetchedConversationRef.current = conversationId;
+      loadedConversationRef.current = null;
+    }
+
     (async () => {
-      setLoading(true);
+      // The spinner replaces the whole message list, so it is only for
+      // opening a conversation. A background refetch (tab regained
+      // focus, realtime reconnect, refresh button) updates in place —
+      // a spinner there would tear the list down and throw away the
+      // reader's scroll position.
+      if (loadedConversationRef.current !== conversationId) setLoading(true);
 
       const { data, error } = await supabase
         .from("messages")
@@ -311,6 +336,7 @@ export function MessageThread({
         console.error("Failed to fetch messages:", error);
       } else {
         onMessagesLoadedRef.current(data ?? []);
+        loadedConversationRef.current = conversationId;
       }
 
       if (!cancelled) setLoading(false);
@@ -455,13 +481,36 @@ export function MessageThread({
       });
   }, [conversationId, hasUnread]);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll. The messages array changes for many reasons that must not
+  // move the reader — a status tick on an old message, a background
+  // refetch — so scroll only when (a) a conversation is first shown, or
+  // (b) a new newest message arrives and the reader is already near the
+  // bottom, or it is one they just sent.
   useEffect(() => {
-    if (scrollRef.current) {
-      const el = scrollRef.current;
-      el.scrollTop = el.scrollHeight;
+    const el = scrollRef.current;
+    if (!el || loading) return;
+
+    const state = scrollStateRef.current;
+    const last = messages[messages.length - 1];
+    const convKey = conversationId ?? null;
+
+    if (state.conversationId !== convKey) {
+      if (last) {
+        el.scrollTop = el.scrollHeight;
+        nearBottomRef.current = true;
+        scrollStateRef.current = { conversationId: convKey, lastId: last.id };
+      }
+      return;
     }
-  }, [messages]);
+
+    if (last && last.id !== state.lastId) {
+      if (nearBottomRef.current || last.id.startsWith("temp-")) {
+        el.scrollTop = el.scrollHeight;
+        nearBottomRef.current = true;
+      }
+      state.lastId = last.id;
+    }
+  }, [messages, loading, conversationId]);
 
   const handleSend = useCallback(
     async (text: string, replyToId?: string) => {
@@ -1080,7 +1129,14 @@ export function MessageThread({
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div
+        ref={scrollRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+        }}
+        className="flex-1 overflow-y-auto px-4 py-4"
+      >
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
