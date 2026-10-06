@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from 'react'
-import { UserPlus } from 'lucide-react'
+import { UserCheck, UserPlus } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import type { Granularity } from '@/lib/dashboard/period'
 import type { PeriodDayPoint } from '@/lib/dashboard/types'
@@ -15,7 +15,32 @@ interface NewContactsChartProps {
   granularity: Granularity
   /** Total days in the period, for the per-day average. */
   days: number
+  /** Which series to draw. Defaults to new contacts. */
+  metric?: 'newContacts' | 'qualifiedLeads'
 }
+
+const TEXT = {
+  newContacts: {
+    day: 'contactsPerDay',
+    week: 'contactsPerWeek',
+    month: 'contactsPerMonth',
+    desc: 'contactsChartDesc',
+    empty: 'noContacts',
+    emptyHint: 'noContactsHint',
+    tooltip: 'tooltip',
+    icon: UserPlus,
+  },
+  qualifiedLeads: {
+    day: 'leadsPerDay',
+    week: 'leadsPerWeek',
+    month: 'leadsPerMonth',
+    desc: 'leadsChartDesc',
+    empty: 'noLeads',
+    emptyHint: 'noLeadsHint',
+    tooltip: 'leadsTooltip',
+    icon: UserCheck,
+  },
+} as const
 
 const VB_W = 760
 const VB_H = 220
@@ -33,8 +58,12 @@ function toDate(key: string): Date {
   return new Date(y, m - 1, d)
 }
 
-export function NewContactsChart({ data, loading, granularity, days }: NewContactsChartProps) {
+export function NewContactsChart({ data, loading, granularity, days, metric = 'newContacts' }: NewContactsChartProps) {
+  const text = TEXT[metric]
   const t = useTranslations('Dashboard.period')
+  // The chart picks its copy by metric, so keys are dynamic; the typed
+  // translator can't express that for keys that take values.
+  const tv = t as unknown as (key: string, values?: Record<string, string | number>) => string
   const locale = useLocale()
   const [hover, setHover] = useState<number | null>(null)
 
@@ -49,15 +78,15 @@ export function NewContactsChart({ data, loading, granularity, days }: NewContac
 
   const stats = useMemo(() => {
     const arr = data ?? []
-    const total = arr.reduce((s, p) => s + p.newContacts, 0)
+    const total = arr.reduce((s, p) => s + p[metric], 0)
     let best: PeriodDayPoint | null = null
-    for (const p of arr) if (p.newContacts > (best?.newContacts ?? 0)) best = p
-    const max = arr.reduce((m, p) => Math.max(m, p.newContacts), 0)
+    for (const p of arr) if (p[metric] > (best?.[metric] ?? 0)) best = p
+    const max = arr.reduce((m, p) => Math.max(m, p[metric]), 0)
     return { total, best, ceil: niceCeil(max) }
-  }, [data])
+  }, [data, metric])
 
   const title =
-    granularity === 'day' ? t('contactsPerDay') : granularity === 'week' ? t('contactsPerWeek') : t('contactsPerMonth')
+    t(text[granularity] as never)
 
   const chartW = VB_W - PAD.left - PAD.right
   const chartH = VB_H - PAD.top - PAD.bottom
@@ -74,14 +103,14 @@ export function NewContactsChart({ data, loading, granularity, days }: NewContac
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-4">
         <div>
           <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('contactsChartDesc')}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t(text.desc as never)}</p>
         </div>
         {!loading && data && stats.total > 0 && (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span>{t('total', { count: stats.total.toLocaleString() })}</span>
             <span>{t('average', { avg: (days > 0 ? Math.round((stats.total / days) * 10) / 10 : 0).toLocaleString() })}</span>
             {stats.best && (
-              <span>{t('best', { label: label(stats.best.day, false), count: stats.best.newContacts.toLocaleString() })}</span>
+              <span>{t('best', { label: label(stats.best.day, false), count: stats.best[metric].toLocaleString() })}</span>
             )}
           </div>
         )}
@@ -91,7 +120,7 @@ export function NewContactsChart({ data, loading, granularity, days }: NewContac
         {loading || !data ? (
           <Skeleton className="h-[220px] w-full" />
         ) : stats.total === 0 ? (
-          <EmptyState icon={UserPlus} title={t('noContacts')} hint={t('noContactsHint')} />
+          <EmptyState icon={text.icon} title={t(text.empty as never)} hint={t(text.emptyHint as never)} />
         ) : (
           <>
             <svg viewBox={`0 0 ${VB_W} ${VB_H}`} className="h-[220px] w-full" role="img" aria-label={title} onMouseLeave={() => setHover(null)}>
@@ -105,16 +134,16 @@ export function NewContactsChart({ data, loading, granularity, days }: NewContac
               ))}
               {data.map((p, i) => {
                 const x = PAD.left + i * slot + (slot - barW) / 2
-                const h = (p.newContacts / stats.ceil) * chartH
+                const h = (p[metric] / stats.ceil) * chartH
                 return (
                   <g key={p.day} onMouseEnter={() => setHover(i)}>
                     {/* full-height hit target so thin bars are easy to hover */}
                     <rect x={PAD.left + i * slot} y={PAD.top} width={slot} height={chartH} fill="transparent" />
                     <rect
                       x={x}
-                      y={y(p.newContacts)}
+                      y={y(p[metric])}
                       width={barW}
-                      height={Math.max(h, p.newContacts > 0 ? 1 : 0)}
+                      height={Math.max(h, p[metric] > 0 ? 1 : 0)}
                       rx={Math.min(2, barW / 2)}
                       fill={hover === i ? '#a78bfa' : '#7c3aed'}
                     />
@@ -129,7 +158,7 @@ export function NewContactsChart({ data, loading, granularity, days }: NewContac
             </svg>
             <p className="mt-2 h-4 text-xs text-muted-foreground" aria-live="polite">
               {shown
-                ? t('tooltip', { label: label(shown.day, true), count: shown.newContacts })
+                ? tv(text.tooltip, { label: label(shown.day, true), count: shown[metric] })
                 : t('hoverHint')}
             </p>
           </>

@@ -186,7 +186,15 @@
       "exportTotal": "Total",
       "exportAvgPerDay": "Promedio por día",
       "exportDailySection": "Detalle por día",
-      "exportDate": "Fecha"
+      "exportDate": "Fecha",
+      "qualifiedLeads": "Leads calificados",
+      "leadsPerDay": "Leads calificados por día",
+      "leadsPerWeek": "Leads calificados por semana",
+      "leadsPerMonth": "Leads calificados por mes",
+      "leadsChartDesc": "Cuántos contactos recibieron la etiqueta “Lead Calificado” durante el período seleccionado.",
+      "noLeads": "No hay leads calificados en este período",
+      "noLeadsHint": "Un lead se cuenta cuando se le asigna la etiqueta “Lead Calificado” a un contacto.",
+      "leadsTooltip": "{label}: {count, plural, one {# lead calificado} other {# leads calificados}}"
     }
   },
   "Inbox": {

@@ -21,6 +21,7 @@ const pt = (day: string, over: Partial<PeriodDayPoint> = {}): PeriodDayPoint => 
   newConversations: 0,
   incoming: 0,
   outgoing: 0,
+  qualifiedLeads: 0,
   ...over,
 })
 
@@ -115,14 +116,14 @@ describe('parseStoredSelection', () => {
 
 describe('totals and bucketing', () => {
   const days = [
-    pt('2026-09-14', { newContacts: 2, incoming: 5, outgoing: 4 }), // Monday
-    pt('2026-09-15', { newContacts: 3, newConversations: 1 }),
+    pt('2026-09-14', { newContacts: 2, incoming: 5, outgoing: 4, qualifiedLeads: 2 }), // Monday
+    pt('2026-09-15', { newContacts: 3, newConversations: 1, qualifiedLeads: 1 }),
     pt('2026-09-20', { newContacts: 1, outgoing: 2 }), // Sunday, same ISO week
     pt('2026-09-21', { newContacts: 4 }), // next Monday
   ]
 
   it('sums every metric', () => {
-    expect(sumPoints(days)).toEqual({ newContacts: 10, newConversations: 1, incoming: 5, outgoing: 6 })
+    expect(sumPoints(days)).toEqual({ newContacts: 10, newConversations: 1, incoming: 5, outgoing: 6, qualifiedLeads: 3 })
   })
 
   it('day granularity leaves points untouched', () => {
@@ -132,7 +133,7 @@ describe('totals and bucketing', () => {
   it('groups into Monday-start weeks', () => {
     const w = bucketPoints(days, 'week')
     expect(w.map((p) => p.day)).toEqual(['2026-09-14', '2026-09-21'])
-    expect(w[0]).toMatchObject({ newContacts: 6, newConversations: 1, incoming: 5, outgoing: 6 })
+    expect(w[0]).toMatchObject({ newContacts: 6, newConversations: 1, incoming: 5, outgoing: 6, qualifiedLeads: 3 })
     expect(w[1].newContacts).toBe(4)
   })
 

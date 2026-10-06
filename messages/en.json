@@ -186,7 +186,15 @@
       "exportTotal": "Total",
       "exportAvgPerDay": "Average per day",
       "exportDailySection": "Daily breakdown",
-      "exportDate": "Date"
+      "exportDate": "Date",
+      "qualifiedLeads": "Qualified leads",
+      "leadsPerDay": "Qualified leads per day",
+      "leadsPerWeek": "Qualified leads per week",
+      "leadsPerMonth": "Qualified leads per month",
+      "leadsChartDesc": "How many contacts got the “Lead Calificado” tag during the selected period.",
+      "noLeads": "No qualified leads in this period",
+      "noLeadsHint": "A lead is counted when the “Lead Calificado” tag is added to a contact.",
+      "leadsTooltip": "{label}: {count, plural, one {# qualified lead} other {# qualified leads}}"
     }
   },
   "Inbox": {

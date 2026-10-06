@@ -146,6 +146,7 @@ export interface PeriodTotals {
   newConversations: number
   incoming: number
   outgoing: number
+  qualifiedLeads: number
 }
 
 export function sumPoints(points: PeriodDayPoint[]): PeriodTotals {
@@ -155,8 +156,9 @@ export function sumPoints(points: PeriodDayPoint[]): PeriodTotals {
       newConversations: acc.newConversations + p.newConversations,
       incoming: acc.incoming + p.incoming,
       outgoing: acc.outgoing + p.outgoing,
+      qualifiedLeads: acc.qualifiedLeads + p.qualifiedLeads,
     }),
-    { newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0 },
+    { newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0, qualifiedLeads: 0 },
   )
 }
 
@@ -183,11 +185,12 @@ export function bucketPoints(points: PeriodDayPoint[], g: Granularity): PeriodDa
   const out = new Map<string, PeriodDayPoint>()
   for (const p of points) {
     const key = bucketStart(p.day, g)
-    const cur = out.get(key) ?? { day: key, newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0 }
+    const cur = out.get(key) ?? { day: key, newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0, qualifiedLeads: 0 }
     cur.newContacts += p.newContacts
     cur.newConversations += p.newConversations
     cur.incoming += p.incoming
     cur.outgoing += p.outgoing
+    cur.qualifiedLeads += p.qualifiedLeads
     out.set(key, cur)
   }
   return [...out.values()].sort((a, b) => (a.day < b.day ? -1 : 1))

@@ -20,12 +20,13 @@ const labels: PeriodExportLabels = {
   newConversations: 'Conversaciones nuevas',
   messagesIn: 'Mensajes recibidos',
   messagesOut: 'Mensajes enviados (bot + equipo)',
+  qualifiedLeads: 'Leads calificados',
 }
 
 const points: PeriodDayPoint[] = [
-  { day: '2026-10-02', newContacts: 10, newConversations: 8, incoming: 100, outgoing: 150 },
-  { day: '2026-10-03', newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0 },
-  { day: '2026-10-04', newContacts: 5, newConversations: 4, incoming: 20, outgoing: 30 },
+  { day: '2026-10-02', newContacts: 10, newConversations: 8, incoming: 100, outgoing: 150, qualifiedLeads: 3 },
+  { day: '2026-10-03', newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0, qualifiedLeads: 0 },
+  { day: '2026-10-04', newContacts: 5, newConversations: 4, incoming: 20, outgoing: 30, qualifiedLeads: 6 },
 ]
 
 function build(overrides: Partial<Parameters<typeof buildPeriodCsv>[0]> = {}) {
@@ -62,22 +63,23 @@ describe('buildPeriodCsv', () => {
   it('writes period totals with a per-day average rounded to one decimal', () => {
     const lines = build().slice(1).split('\r\n')
     const start = lines.indexOf('"Total del período"')
-    expect(lines.slice(start, start + 6)).toEqual([
+    expect(lines.slice(start, start + 7)).toEqual([
       '"Total del período"',
       '"Métrica","Total","Promedio por día"',
       '"Contactos nuevos",15,5',
       '"Conversaciones nuevas",12,4',
       '"Mensajes recibidos",120,40',
       '"Mensajes enviados (bot + equipo)",180,60',
+      '"Leads calificados",9,3',
     ])
   })
 
   it('rounds the average to one decimal', () => {
     const csv = build({
       points: [
-        { day: '2026-10-01', newContacts: 1, newConversations: 0, incoming: 0, outgoing: 0 },
-        { day: '2026-10-02', newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0 },
-        { day: '2026-10-03', newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0 },
+        { day: '2026-10-01', newContacts: 1, newConversations: 0, incoming: 0, outgoing: 0, qualifiedLeads: 0 },
+        { day: '2026-10-02', newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0, qualifiedLeads: 0 },
+        { day: '2026-10-03', newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0, qualifiedLeads: 0 },
       ],
     })
     expect(csv).toContain('"Contactos nuevos",1,0.3')
@@ -88,10 +90,10 @@ describe('buildPeriodCsv', () => {
     const start = lines.indexOf('"Detalle por día"')
     expect(lines.slice(start)).toEqual([
       '"Detalle por día"',
-      '"Fecha","Contactos nuevos","Conversaciones nuevas","Mensajes recibidos","Mensajes enviados (bot + equipo)"',
-      '"2026-10-02",10,8,100,150',
-      '"2026-10-03",0,0,0,0',
-      '"2026-10-04",5,4,20,30',
+      '"Fecha","Contactos nuevos","Conversaciones nuevas","Mensajes recibidos","Mensajes enviados (bot + equipo)","Leads calificados"',
+      '"2026-10-02",10,8,100,150,3',
+      '"2026-10-03",0,0,0,0,0',
+      '"2026-10-04",5,4,20,30,6',
     ])
   })
 

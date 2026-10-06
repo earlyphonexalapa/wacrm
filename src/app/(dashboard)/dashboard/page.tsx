@@ -218,6 +218,7 @@ export default function DashboardPage() {
         newConversations: tp('newConversations'),
         messagesIn: tp('messagesIn'),
         messagesOut: tp('messagesOut'),
+        qualifiedLeads: tp('qualifiedLeads'),
       },
     })
     downloadTextFile(
@@ -261,12 +262,21 @@ export default function DashboardPage() {
           previous={previousTotals}
           days={periodView.days}
         />
-        <NewContactsChart
-          data={periodView.bucketed}
-          loading={periodLoading}
-          granularity={periodView.granularity}
-          days={periodView.days}
-        />
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <NewContactsChart
+            data={periodView.bucketed}
+            loading={periodLoading}
+            granularity={periodView.granularity}
+            days={periodView.days}
+          />
+          <NewContactsChart
+            metric="qualifiedLeads"
+            data={periodView.bucketed}
+            loading={periodLoading}
+            granularity={periodView.granularity}
+            days={periodView.days}
+          />
+        </div>
       </div>
 
       {/* Metric cards */}

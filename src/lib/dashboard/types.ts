@@ -74,4 +74,6 @@ export interface PeriodDayPoint {
   newConversations: number
   incoming: number
   outgoing: number
+  /** Contacts given the "Lead Calificado" tag that day (migration 054). */
+  qualifiedLeads: number
 }

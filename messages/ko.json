@@ -186,7 +186,15 @@
       "exportTotal": "합계",
       "exportAvgPerDay": "일 평균",
       "exportDailySection": "일별 상세",
-      "exportDate": "날짜"
+      "exportDate": "날짜",
+      "qualifiedLeads": "검증된 리드",
+      "leadsPerDay": "일별 검증된 리드",
+      "leadsPerWeek": "주별 검증된 리드",
+      "leadsPerMonth": "월별 검증된 리드",
+      "leadsChartDesc": "선택한 기간에 “Lead Calificado” 태그가 붙은 연락처 수입니다.",
+      "noLeads": "이 기간에는 검증된 리드가 없습니다",
+      "noLeadsHint": "연락처에 “Lead Calificado” 태그가 추가되면 리드로 집계됩니다.",
+      "leadsTooltip": "{label}: 검증된 리드 {count}명"
     }
   },
   "Inbox": {

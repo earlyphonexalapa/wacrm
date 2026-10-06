@@ -27,6 +27,7 @@ export interface PeriodExportLabels {
   newConversations: string
   messagesIn: string
   messagesOut: string
+  qualifiedLeads: string
 }
 
 export interface BuildPeriodCsvInput {
@@ -68,10 +69,20 @@ export function buildPeriodCsv(input: BuildPeriodCsvInput): string {
     row(labels.newConversations, totals.newConversations, perDay(totals.newConversations, days)),
     row(labels.messagesIn, totals.incoming, perDay(totals.incoming, days)),
     row(labels.messagesOut, totals.outgoing, perDay(totals.outgoing, days)),
+    row(labels.qualifiedLeads, totals.qualifiedLeads, perDay(totals.qualifiedLeads, days)),
     '',
     row(labels.dailySection),
-    row(labels.date, labels.newContacts, labels.newConversations, labels.messagesIn, labels.messagesOut),
-    ...points.map((p) => row(p.day, p.newContacts, p.newConversations, p.incoming, p.outgoing)),
+    row(
+      labels.date,
+      labels.newContacts,
+      labels.newConversations,
+      labels.messagesIn,
+      labels.messagesOut,
+      labels.qualifiedLeads,
+    ),
+    ...points.map((p) =>
+      row(p.day, p.newContacts, p.newConversations, p.incoming, p.outgoing, p.qualifiedLeads),
+    ),
   ]
 
   // Excel needs a UTF-8 BOM to render accents correctly instead of mojibake.

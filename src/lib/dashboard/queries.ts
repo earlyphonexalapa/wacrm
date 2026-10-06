@@ -411,13 +411,21 @@ export async function loadPeriodStats(
   to: string,
   timeZone: string,
 ): Promise<PeriodDayPoint[]> {
-  const { data, error } = await db.rpc('dashboard_period_stats', {
-    p_from: from,
-    p_to: to,
-    p_tz: timeZone,
-  })
-  if (error) throw error
-  return ((data ?? []) as {
+  const args = { p_from: from, p_to: to, p_tz: timeZone }
+  const [stats, leads] = await Promise.all([
+    db.rpc('dashboard_period_stats', args),
+    db.rpc('dashboard_qualified_leads', args),
+  ])
+  if (stats.error) throw stats.error
+
+  // Qualified leads arrived with migration 054. Until it has run, show
+  // 0 for them instead of failing the whole dashboard.
+  if (leads.error) console.warn('[dashboard] qualified leads unavailable:', leads.error.message)
+  const leadsByDay = new Map<string, number>(
+    ((leads.data ?? []) as { day: string; qualified_leads: number }[]).map((r) => [r.day, r.qualified_leads]),
+  )
+
+  return ((stats.data ?? []) as {
     day: string
     new_contacts: number
     new_conversations: number
@@ -429,5 +437,6 @@ export async function loadPeriodStats(
     newConversations: r.new_conversations,
     incoming: r.incoming_messages,
     outgoing: r.outgoing_messages,
+    qualifiedLeads: leadsByDay.get(r.day) ?? 0,
   }))
 }
