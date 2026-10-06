@@ -3,6 +3,7 @@
 import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useCloserIsolation } from "@/hooks/use-closer-isolation";
+import { shouldResyncAfterAway } from "@/lib/inbox/resync";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -381,9 +382,18 @@ function InboxPageInner() {
    * visibilitychange → visible is a reliable signal that we may have
    * missed events. Cheap to fire; the children dedupe on their own.
    */
+  const hiddenAtRef = useRef<number | null>(null);
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "hidden") {
+        hiddenAtRef.current = Date.now();
+        return;
+      }
+      // Only after a real absence: a quick alt-tab can't have missed anything
+      // (a dropped connection resyncs on its own) and the refetch is heavy.
+      const hiddenAt = hiddenAtRef.current;
+      hiddenAtRef.current = null;
+      if (shouldResyncAfterAway(hiddenAt, Date.now())) {
         setResyncToken((n) => n + 1);
       }
     };

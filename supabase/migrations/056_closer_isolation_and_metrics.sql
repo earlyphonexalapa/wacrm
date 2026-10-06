@@ -44,70 +44,68 @@ $$;
 ALTER FUNCTION public.closer_isolation_on(UUID) OWNER TO postgres;
 GRANT EXECUTE ON FUNCTION public.closer_isolation_on(UUID) TO authenticated, service_role;
 
-CREATE OR REPLACE FUNCTION public.can_see_conversation(
-  p_account UUID,
-  p_owner UUID,
-  p_assigned UUID
-)
+-- The two facts every row-level check below needs, as functions that take no
+-- row: the caller's account, and whether the caller may see every chat in it
+-- (an admin/owner, or isolation is off). The policies call them as
+-- "(SELECT my_account_id())", which Postgres evaluates ONCE per statement as
+-- an InitPlan instead of once per row — with thousands of chats the
+-- difference is the whole cost of opening the Inbox.
+
+CREATE OR REPLACE FUNCTION public.my_account_id()
+RETURNS UUID
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT p.account_id FROM profiles p WHERE p.user_id = auth.uid() LIMIT 1;
+$$;
+
+ALTER FUNCTION public.my_account_id() OWNER TO postgres;
+GRANT EXECUTE ON FUNCTION public.my_account_id() TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.sees_all_chats()
 RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT is_account_member(p_account)
-     AND (
-       NOT closer_isolation_on(p_account)
-       OR is_account_member(p_account, 'admin')
-       OR p_owner = auth.uid()
-       OR p_assigned = auth.uid()
-     );
+  SELECT COALESCE(
+    (SELECT p.account_role IN ('owner', 'admin') OR NOT closer_isolation_on(p.account_id)
+       FROM profiles p WHERE p.user_id = auth.uid() LIMIT 1),
+    false
+  );
 $$;
 
-ALTER FUNCTION public.can_see_conversation(UUID, UUID, UUID) OWNER TO postgres;
-GRANT EXECUTE ON FUNCTION public.can_see_conversation(UUID, UUID, UUID) TO authenticated, service_role;
-
-CREATE OR REPLACE FUNCTION public.can_see_contact(
-  p_account UUID,
-  p_contact UUID,
-  p_creator UUID
-)
-RETURNS BOOLEAN
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT is_account_member(p_account)
-     AND (
-       NOT closer_isolation_on(p_account)
-       OR is_account_member(p_account, 'admin')
-       OR p_creator = auth.uid()
-       OR EXISTS (
-         SELECT 1
-         FROM conversations cv
-         WHERE cv.contact_id = p_contact
-           AND (cv.owner_agent_id = auth.uid() OR cv.assigned_agent_id = auth.uid())
-       )
-     );
-$$;
-
-ALTER FUNCTION public.can_see_contact(UUID, UUID, UUID) OWNER TO postgres;
-GRANT EXECUTE ON FUNCTION public.can_see_contact(UUID, UUID, UUID) TO authenticated, service_role;
+ALTER FUNCTION public.sees_all_chats() OWNER TO postgres;
+GRANT EXECUTE ON FUNCTION public.sees_all_chats() TO authenticated, service_role;
 
 -- ---- conversations ---------------------------------------------------------
 
 DROP POLICY IF EXISTS conversations_select ON conversations;
 CREATE POLICY conversations_select ON conversations FOR SELECT
-  USING (can_see_conversation(account_id, owner_agent_id, assigned_agent_id));
+  USING (
+    account_id = (SELECT my_account_id())
+    AND (
+      (SELECT sees_all_chats())
+      OR owner_agent_id = (SELECT auth.uid())
+      OR assigned_agent_id = (SELECT auth.uid())
+    )
+  );
 
--- WITH CHECK is explicit so a closer can hand a chat to a teammate (the new
--- row is no longer theirs, which a bare USING would reject).
+-- Changing a chat's owner goes through lead_routing_set_owner() below: a plain
+-- UPDATE that hands a chat away fails, because Postgres also checks the new
+-- row against the SELECT policy.
 DROP POLICY IF EXISTS conversations_update ON conversations;
 CREATE POLICY conversations_update ON conversations FOR UPDATE
   USING (
     is_account_member(account_id, 'agent')
-    AND can_see_conversation(account_id, owner_agent_id, assigned_agent_id)
+    AND (
+      (SELECT sees_all_chats())
+      OR owner_agent_id = (SELECT auth.uid())
+      OR assigned_agent_id = (SELECT auth.uid())
+    )
   )
   WITH CHECK (is_account_member(account_id, 'agent'));
 
@@ -115,22 +113,64 @@ DROP POLICY IF EXISTS conversations_delete ON conversations;
 CREATE POLICY conversations_delete ON conversations FOR DELETE
   USING (
     is_account_member(account_id, 'agent')
-    AND can_see_conversation(account_id, owner_agent_id, assigned_agent_id)
+    AND (
+      (SELECT sees_all_chats())
+      OR owner_agent_id = (SELECT auth.uid())
+      OR assigned_agent_id = (SELECT auth.uid())
+    )
   );
 
 -- ---- contacts and their notes -------------------------------------------------
+-- A closer sees the contacts they created and the contacts of the chats they
+-- own or are assigned to.
 
 DROP POLICY IF EXISTS contacts_select ON contacts;
 CREATE POLICY contacts_select ON contacts FOR SELECT
-  USING (can_see_contact(account_id, id, user_id));
+  USING (
+    account_id = (SELECT my_account_id())
+    AND (
+      (SELECT sees_all_chats())
+      OR user_id = (SELECT auth.uid())
+      OR EXISTS (
+        SELECT 1
+        FROM conversations cv
+        WHERE cv.contact_id = contacts.id
+          AND (cv.owner_agent_id = (SELECT auth.uid()) OR cv.assigned_agent_id = (SELECT auth.uid()))
+      )
+    )
+  );
 
 DROP POLICY IF EXISTS contacts_update ON contacts;
 CREATE POLICY contacts_update ON contacts FOR UPDATE
-  USING (is_account_member(account_id, 'agent') AND can_see_contact(account_id, id, user_id));
+  USING (
+    is_account_member(account_id, 'agent')
+    AND (
+      (SELECT sees_all_chats())
+      OR user_id = (SELECT auth.uid())
+      OR EXISTS (
+        SELECT 1
+        FROM conversations cv
+        WHERE cv.contact_id = contacts.id
+          AND (cv.owner_agent_id = (SELECT auth.uid()) OR cv.assigned_agent_id = (SELECT auth.uid()))
+      )
+    )
+  );
 
 DROP POLICY IF EXISTS contacts_delete ON contacts;
 CREATE POLICY contacts_delete ON contacts FOR DELETE
-  USING (is_account_member(account_id, 'agent') AND can_see_contact(account_id, id, user_id));
+  USING (
+    is_account_member(account_id, 'agent')
+    AND (
+      (SELECT sees_all_chats())
+      OR user_id = (SELECT auth.uid())
+      OR EXISTS (
+        SELECT 1
+        FROM conversations cv
+        WHERE cv.contact_id = contacts.id
+          AND (cv.owner_agent_id = (SELECT auth.uid()) OR cv.assigned_agent_id = (SELECT auth.uid()))
+      )
+    )
+  );
 
 -- The contacts subquery runs under contacts_select, so notes follow it.
 DROP POLICY IF EXISTS contact_notes_select ON contact_notes;
