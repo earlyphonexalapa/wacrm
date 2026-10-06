@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   getSubscribedApps,
@@ -29,6 +30,11 @@ import {
  * what the UI badges on.
  */
 export async function GET() {
+  try {
+    await requireRole('admin')
+  } catch (err) {
+    return toErrorResponse(err)
+  }
   const supabase = await createClient()
   const {
     data: { user },

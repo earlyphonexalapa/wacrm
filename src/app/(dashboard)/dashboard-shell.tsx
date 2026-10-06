@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { canOpenPath, minRoleForPath } from "@/lib/auth/nav-access";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { AccountAccessAlert } from "@/components/layout/account-access-alert";
@@ -13,8 +14,24 @@ import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
 // client components can't export Next's metadata object.
 
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, accountRole, profileLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Technical areas (automations, follow-ups, flows, AI agents, broadcasts,
+  // exports, pipelines) are for admins and the owner. Typing the address of
+  // one as a closer sends you back to the inbox instead of opening it.
+  // While the role is still loading, a restricted page just waits.
+  const roleKnown = !profileLoading && accountRole !== null;
+  const blocked = roleKnown
+    ? !canOpenPath(accountRole, pathname)
+    : profileLoading && minRoleForPath(pathname) !== "viewer";
+
+  useEffect(() => {
+    if (roleKnown && !canOpenPath(accountRole, pathname)) {
+      router.replace("/inbox");
+    }
+  }, [roleKnown, accountRole, pathname, router]);
 
   // Sidebar drawer state — only used on mobile. On lg+ the sidebar is
   // always visible and this stays at `false` (ignored by the component).
@@ -53,7 +70,13 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
           {/* Above every page: writes are being rejected and here's why.
               Renders nothing unless the account/role failed to resolve. */}
           <AccountAccessAlert />
-          {children}
+          {blocked ? (
+            <div className="flex items-center justify-center py-24">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            </div>
+          ) : (
+            children
+          )}
         </main>
       </div>
     </div>

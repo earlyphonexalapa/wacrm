@@ -26,10 +26,13 @@ export function SettingsRail({
   active,
   onSelect,
   hints,
+  sections = SETTINGS_SECTIONS,
 }: {
   active: SettingsSection;
   onSelect: (section: SettingsSection) => void;
   hints?: Partial<Record<SettingsSection, ReactNode>>;
+  /** Sections to list; defaults to all of them. */
+  sections?: readonly SettingsSection[];
 }) {
   const t = useTranslations('Settings');
   const activeRef = useRef<HTMLButtonElement>(null);
@@ -56,7 +59,7 @@ export function SettingsRail({
       )}
     >
       {RAIL_GROUPS.map(({ label, group }) => {
-        const items = SETTINGS_SECTIONS.filter(
+        const items = sections.filter(
           (s) => SECTION_META[s].group === group,
         );
         return (

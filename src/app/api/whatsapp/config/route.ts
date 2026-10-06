@@ -7,6 +7,25 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { hasMinRole, isAccountRole } from '@/lib/auth/roles'
+
+/**
+ * The WhatsApp connection (token, webhook, registration) is technical
+ * configuration: only admins and the owner may read, save or reset it.
+ * The inbox's "connected" banner reads the status column directly, so
+ * closers lose nothing by being kept out of this route.
+ */
+async function callerIsAdmin(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('account_role')
+    .eq('user_id', userId)
+    .maybeSingle()
+  return isAccountRole(data?.account_role) && hasMinRole(data.account_role, 'admin')
+}
 
 /**
  * Resolve the caller's account_id from their profile. Inlined here
@@ -71,6 +90,13 @@ export async function GET() {
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!(await callerIsAdmin(supabase, user.id))) {
+      return NextResponse.json(
+        { error: 'Only an admin can manage the WhatsApp connection.' },
+        { status: 403 },
+      )
     }
 
     const accountId = await resolveAccountId(supabase, user.id)
@@ -174,6 +200,13 @@ export async function POST(request: Request) {
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!(await callerIsAdmin(supabase, user.id))) {
+      return NextResponse.json(
+        { error: 'Only an admin can manage the WhatsApp connection.' },
+        { status: 403 },
+      )
     }
 
     const accountId = await resolveAccountId(supabase, user.id)
@@ -515,6 +548,13 @@ export async function DELETE() {
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!(await callerIsAdmin(supabase, user.id))) {
+      return NextResponse.json(
+        { error: 'Only an admin can manage the WhatsApp connection.' },
+        { status: 403 },
+      )
     }
 
     const accountId = await resolveAccountId(supabase, user.id)

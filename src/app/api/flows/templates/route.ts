@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { listFlowTemplates } from '@/lib/flows/templates'
 
 /**
@@ -13,6 +14,11 @@ import { listFlowTemplates } from '@/lib/flows/templates'
  * Available to any signed-in user. Flows is in soft-GA.
  */
 export async function GET() {
+  try {
+    await requireRole('admin')
+  } catch (err) {
+    return toErrorResponse(err)
+  }
   const supabase = await createClient()
   const {
     data: { user },

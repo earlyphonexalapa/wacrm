@@ -52,6 +52,11 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  try {
+    await requireRole('admin')
+  } catch (err) {
+    return toErrorResponse(err)
+  }
   const { id } = await context.params
   const guard = await requireOwnership(id)
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
@@ -97,7 +102,7 @@ export async function PUT(
   // it, but this route mutates via the service-role client which bypasses
   // RLS, so the role must be enforced here (a viewer passes ownership).
   try {
-    await requireRole('agent')
+    await requireRole('admin')
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -192,7 +197,7 @@ export async function DELETE(
   // Writes require at least `agent` — see the PUT handler note. The
   // service-role client below bypasses the agent-gated flows_delete RLS.
   try {
-    await requireRole('agent')
+    await requireRole('admin')
   } catch (err) {
     return toErrorResponse(err)
   }

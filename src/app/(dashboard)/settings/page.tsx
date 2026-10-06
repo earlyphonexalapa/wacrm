@@ -20,7 +20,8 @@ import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import { LeadRoutingSettings } from '@/components/settings/lead-routing-settings';
 import {
-  resolveSection,
+  resolveSectionFor,
+  sectionsForRole,
   type SettingsSection,
 } from '@/components/settings/settings-sections';
 
@@ -43,7 +44,7 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency } = useAuth();
+  const { defaultCurrency, canEditSettings, profileLoading } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
 
@@ -51,7 +52,9 @@ function SettingsPageInner() {
   // section — deep-linkable, and it keeps the existing links in the
   // app sidebar/header working. Legacy tab values (tags, custom-fields)
   // resolve onto their new home; unknown/empty → the Overview landing.
-  const section = resolveSection(searchParams.get('tab'));
+  // Closers get only the personal sections; the technical ones (WhatsApp,
+  // templates, fields, members, lead assignment, API keys) are admin-only.
+  const section = resolveSectionFor(searchParams.get('tab'), canEditSettings);
 
   const go = (next: SettingsSection) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -97,8 +100,15 @@ function SettingsPageInner() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[236px_minmax(0,1fr)] lg:items-start">
-        <SettingsRail active={section} onSelect={go} hints={hints} />
-        <div className="min-w-0">{panel[section]}</div>
+        <SettingsRail
+          active={section}
+          onSelect={go}
+          hints={hints}
+          sections={sectionsForRole(canEditSettings)}
+        />
+        {/* Wait for the role: otherwise an admin opening ?tab=whatsapp would
+            briefly load (and fetch for) the profile section first. */}
+        <div className="min-w-0">{profileLoading ? null : panel[section]}</div>
       </div>
     </div>
   );

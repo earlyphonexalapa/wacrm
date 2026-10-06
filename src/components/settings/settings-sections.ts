@@ -70,6 +70,24 @@ export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[
   { label: 'Workspace', group: 'workspace' },
 ];
 
+/**
+ * What a closer (agent) or viewer can open in Settings: their own profile,
+ * password and appearance, plus the shared quick replies they use in chats.
+ * Everything technical — the WhatsApp connection, templates, fields and
+ * tags, deals, members, lead assignment, API keys — is for admins and the
+ * owner.
+ */
+export const NON_ADMIN_SECTIONS: readonly SettingsSection[] = [
+  'profile',
+  'security',
+  'appearance',
+  'quick-replies',
+]
+
+export function sectionsForRole(isAdmin: boolean): readonly SettingsSection[] {
+  return isAdmin ? SETTINGS_SECTIONS : NON_ADMIN_SECTIONS
+}
+
 function isSection(value: string | null): value is SettingsSection {
   return !!value && (SETTINGS_SECTIONS as readonly string[]).includes(value);
 }
@@ -84,4 +102,14 @@ export function resolveSection(raw: string | null): SettingsSection {
   if (raw === 'tags' || raw === 'custom-fields') return 'fields';
   if (isSection(raw)) return raw;
   return DEFAULT_SECTION;
+}
+
+/**
+ * Like `resolveSection`, but a section the role may not open falls back to
+ * the first one it may: the Overview for admins, "Your profile" for the rest.
+ */
+export function resolveSectionFor(raw: string | null, isAdmin: boolean): SettingsSection {
+  const section = resolveSection(raw);
+  if (sectionsForRole(isAdmin).includes(section)) return section;
+  return isAdmin ? DEFAULT_SECTION : 'profile';
 }
