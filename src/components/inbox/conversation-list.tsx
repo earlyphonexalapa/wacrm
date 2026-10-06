@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
 import {
   CONVERSATION_SELECT,
   loadAlwaysLoadedConversations,
@@ -46,7 +47,7 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 
 
-type InboxFilter = ConversationStatus | "all" | "unread" | "needsHuman";
+type InboxFilter = ConversationStatus | "all" | "unread" | "needsHuman" | "mine";
 
 export function ConversationList({
   activeConversationId,
@@ -56,15 +57,45 @@ export function ConversationList({
   resyncToken = 0,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+
+  // "My leads" only makes sense once lead assignment hands out owners.
+  const hasOwners = useMemo(
+    () => conversations.some((c) => c.owner_agent_id),
+    [conversations],
+  );
   
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
     { label: t("filterAll"), value: "all" },
+    ...(hasOwners ? [{ label: t("filterMine"), value: "mine" as InboxFilter }] : []),
     { label: t("filterUnread"), value: "unread" },
     { label: t("filterNeedsHuman"), value: "needsHuman" },
     { label: t("filterOpen"), value: "open" },
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
-  ], [t]);
+  ], [t, hasOwners]);
+
+  // Who owns what, for the badge on each row. Only the owner's name is
+  // needed, so this stays a tiny one-off fetch.
+  const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    createClient()
+      .from("profiles")
+      .select("user_id, full_name, email")
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const map: Record<string, string> = {};
+        for (const p of data as { user_id: string; full_name: string | null; email: string | null }[]) {
+          map[p.user_id] = p.full_name?.trim() || p.email || "";
+        }
+        setOwnerNames(map);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
@@ -187,6 +218,8 @@ export function ConversationList({
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
+    } else if (filter === "mine") {
+      result = result.filter((c) => userId !== null && c.owner_agent_id === userId);
     } else if (filter === "needsHuman") {
       // Bot paused here — either it handed off, or a teammate took over
       // manually. Covers both "needs a human" and "AI is paused" in one
@@ -217,7 +250,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany, userId]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -459,6 +492,7 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                ownerName={conv.owner_agent_id ? (ownerNames[conv.owner_agent_id] ?? "") : null}
                 t={t}
               />
             ))}
@@ -473,6 +507,8 @@ interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  /** Closer who owns the lead; "" while their name is still loading, null if unowned. */
+  ownerName: string | null;
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -480,6 +516,7 @@ function ConversationItem({
   conversation,
   isActive,
   onSelect,
+  ownerName,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
@@ -505,7 +542,7 @@ function ConversationItem({
       )}
     >
       {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+      <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
         {contact?.avatar_url ? (
           <img
             src={contact.avatar_url}
@@ -514,6 +551,14 @@ function ConversationItem({
           />
         ) : (
           initials
+        )}
+        {ownerName !== null && (
+          <span
+            title={ownerName ? t("ownerTitle", { name: ownerName }) : undefined}
+            className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground ring-2 ring-background"
+          >
+            {ownerName ? ownerName.charAt(0).toUpperCase() : "·"}
+          </span>
         )}
       </div>
 

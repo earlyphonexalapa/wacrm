@@ -105,6 +105,13 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+  /**
+   * Show the "closer" (lead owner) control. The page turns it on once lead
+   * assignment is handing out owners, so accounts that don't use it never
+   * see it. onOwnerChange lets the page update its copy right away.
+   */
+  showOwner?: boolean;
+  onOwnerChange?: (conversationId: string, ownerId: string | null) => void;
 }
 
 function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
@@ -163,6 +170,8 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
+  showOwner = false,
+  onOwnerChange,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
@@ -888,6 +897,31 @@ export function MessageThread({
     [conversation, user?.id],
   );
 
+  const handleOwnerChange = useCallback(
+    async (ownerId: string | null) => {
+      if (!conversation) return;
+
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("conversations")
+        .update({
+          owner_agent_id: ownerId,
+          owner_source: ownerId ? "manual" : null,
+          owner_assigned_at: ownerId ? new Date().toISOString() : null,
+        })
+        .eq("id", conversation.id);
+
+      if (error) {
+        console.error("Failed to update the closer:", error);
+        toast.error(t("ownerFailed"));
+        return;
+      }
+
+      onOwnerChange?.(conversation.id, ownerId);
+    },
+    [conversation, onOwnerChange, t],
+  );
+
   const handleAssignChange = useCallback(
     async (agentId: string | null) => {
       if (!conversation) return;
@@ -938,6 +972,11 @@ export function MessageThread({
   const assignLabel = assignedAgentId
     ? (currentAssignee?.full_name ?? t("assigned"))
     : t("assign");
+  const ownerId = conversation.owner_agent_id ?? null;
+  const ownerProfile = profiles.find((p) => p.user_id === ownerId);
+  const ownerLabel = ownerId
+    ? (ownerProfile?.full_name ?? t("ownerLabel"))
+    : t("ownerUnset");
 
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
@@ -1125,6 +1164,58 @@ export function MessageThread({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Lead owner (closer) dropdown — only once lead assignment is in use. */}
+          {showOwner && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                title={t("ownerLabel")}
+                className={cn(
+                  "inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-xs hover:bg-muted",
+                  ownerId ? "text-primary" : "text-muted-foreground"
+                )}
+              >
+                <span className="hidden sm:inline">{t("ownerLabel")}:</span>
+                <span className="max-w-24 truncate">{ownerLabel}</span>
+                <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="border-border bg-popover">
+                {profiles.length === 0 ? (
+                  <DropdownMenuItem disabled className="text-sm text-muted-foreground">
+                    {t("noTeammates")}
+                  </DropdownMenuItem>
+                ) : (
+                  profiles.map((p) => (
+                    <DropdownMenuItem
+                      key={p.id}
+                      onClick={() => handleOwnerChange(p.user_id)}
+                      className={cn(
+                        "text-sm",
+                        p.user_id === ownerId ? "text-primary" : "text-popover-foreground"
+                      )}
+                    >
+                      <span className="flex-1">
+                        {p.full_name}
+                        {p.user_id === user?.id ? t("me") : ""}
+                      </span>
+                      {p.user_id === ownerId && <Check className="ml-2 h-3 w-3" />}
+                    </DropdownMenuItem>
+                  ))
+                )}
+                {ownerId && (
+                  <>
+                    <DropdownMenuSeparator className="bg-border" />
+                    <DropdownMenuItem
+                      onClick={() => handleOwnerChange(null)}
+                      className="text-sm text-muted-foreground"
+                    >
+                      {t("ownerClear")}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 

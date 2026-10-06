@@ -215,7 +215,9 @@
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
       "unknown": "Unknown",
-      "filterNeedsHuman": "Needs attention"
+      "filterNeedsHuman": "Needs attention",
+      "filterMine": "My leads",
+      "ownerTitle": "Closer: {name}"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -239,7 +241,11 @@
       "selectConversation": "Select a conversation",
       "selectConversationHint": "Choose a conversation from the left to start messaging",
       "today": "Today",
-      "yesterday": "Yesterday"
+      "yesterday": "Yesterday",
+      "ownerLabel": "Closer",
+      "ownerUnset": "No closer",
+      "ownerClear": "Remove closer",
+      "ownerFailed": "Could not change the closer"
     },
     "sessionTimer": {
       "expired": "Expired",

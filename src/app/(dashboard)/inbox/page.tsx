@@ -537,6 +537,22 @@ function InboxPageInner() {
     [activeConversation]
   );
 
+  const handleOwnerChange = useCallback(
+    (conversationId: string, ownerId: string | null) => {
+      const patch = {
+        owner_agent_id: ownerId,
+        owner_source: ownerId ? ("manual" as const) : null,
+      };
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conversationId ? { ...c, ...patch } : c))
+      );
+      if (activeConversation?.id === conversationId) {
+        setActiveConversation((prev) => (prev ? { ...prev, ...patch } : prev));
+      }
+    },
+    [activeConversation]
+  );
+
   const handleAssignChange = useCallback(
     (conversationId: string, assignedAgentId: string | null) => {
       setConversations((prev) =>
@@ -621,6 +637,8 @@ function InboxPageInner() {
             onUpdateMessage={handleUpdateMessage}
             onStatusChange={handleStatusChange}
             onAssignChange={handleAssignChange}
+            showOwner={conversations.some((c) => c.owner_agent_id)}
+            onOwnerChange={handleOwnerChange}
             onBack={handleCloseConversation}
             resyncToken={resyncToken}
             onRefresh={handleManualRefresh}

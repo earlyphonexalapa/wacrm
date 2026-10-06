@@ -215,7 +215,9 @@
       "noConversations": "No se encontraron conversaciones",
       "noMessagesYet": "Aún no hay mensajes",
       "unknown": "Desconocido",
-      "filterNeedsHuman": "Requiere atención"
+      "filterNeedsHuman": "Requiere atención",
+      "filterMine": "Mis leads",
+      "ownerTitle": "Closer: {name}"
     },
     "messageThread": {
       "backToConversations": "Volver a las conversaciones",
@@ -239,7 +241,11 @@
       "selectConversation": "Selecciona una conversación",
       "selectConversationHint": "Elige una conversación a la izquierda para empezar a escribir",
       "today": "Hoy",
-      "yesterday": "Ayer"
+      "yesterday": "Ayer",
+      "ownerLabel": "Closer",
+      "ownerUnset": "Sin closer",
+      "ownerClear": "Quitar closer",
+      "ownerFailed": "No se pudo cambiar el closer"
     },
     "sessionTimer": {
       "expired": "Expirada",
