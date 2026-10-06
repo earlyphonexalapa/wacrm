@@ -6,23 +6,43 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 const MODES = ['unowned_to_one', 'unowned_spread', 'move'] as const
 type Mode = (typeof MODES)[number]
 
+/** 1..3650 whole days, or null when absent / not a usable number. */
+function parseDays(raw: unknown): number | null {
+  const n = typeof raw === 'string' || typeof raw === 'number' ? Number(raw) : NaN
+  return Number.isInteger(n) && n >= 1 && n <= 3650 ? n : null
+}
+
 /**
- * GET /api/routing/bulk-assign  (admin)
- * How many chats have no owner yet — the number the "reassign" card shows.
+ * GET /api/routing/bulk-assign?days=14  (admin)
+ * How many chats have no owner yet — in total, and (with `days`) how many of
+ * those had a message within that many days. The numbers the "reassign" card
+ * shows.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const { supabase, accountId } = await requireRole('admin')
-    const { count, error } = await supabase
-      .from('conversations')
-      .select('id', { count: 'exact', head: true })
-      .eq('account_id', accountId)
-      .is('owner_agent_id', null)
-    if (error) {
+    const days = parseDays(new URL(request.url).searchParams.get('days'))
+
+    const unowned = () =>
+      supabase
+        .from('conversations')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId)
+        .is('owner_agent_id', null)
+
+    const cutoff = days === null ? null : new Date(Date.now() - days * 86_400_000).toISOString()
+    const [total, recent] = await Promise.all([
+      unowned(),
+      cutoff === null ? Promise.resolve(null) : unowned().gte('last_message_at', cutoff),
+    ])
+    if (total.error) {
       // Column missing -> migration 055 hasn't run.
-      return NextResponse.json({ unowned: null })
+      return NextResponse.json({ unowned: null, in_window: null })
     }
-    return NextResponse.json({ unowned: count ?? 0 })
+    return NextResponse.json({
+      unowned: total.count ?? 0,
+      in_window: recent === null ? (total.count ?? 0) : (recent.count ?? 0),
+    })
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -31,9 +51,12 @@ export async function GET() {
 /**
  * POST /api/routing/bulk-assign  (admin)
  *
- *   { mode: 'unowned_to_one', to }     chats with no owner  -> one closer
- *   { mode: 'unowned_spread' }         chats with no owner  -> spread evenly over all closers
- *   { mode: 'move', from, to }         one closer's chats   -> another closer
+ *   { mode: 'unowned_to_one', to, days? }   chats with no owner  -> one closer
+ *   { mode: 'unowned_spread', days? }       chats with no owner  -> spread evenly over all closers
+ *   { mode: 'move', from, to }              one closer's chats   -> another closer
+ *
+ * `days` limits the two "unowned" modes to chats with a message in that many
+ * days; leave it out for every unowned chat.
  *
  * The work (and the admin check) lives in the lead_routing_bulk_assign SQL
  * function, which updates every matching chat in one statement.
@@ -56,6 +79,7 @@ export async function POST(request: Request) {
       p_mode: mode,
       p_to: str(body?.to),
       p_from: str(body?.from),
+      p_days: parseDays(body?.days),
     })
     if (error) {
       if (error.code === 'PGRST202') {

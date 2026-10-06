@@ -80,6 +80,11 @@ export function LeadRoutingSettings() {
 
   // Reassigning chats in bulk
   const [unowned, setUnowned] = useState<number | null>(null);
+  // Unowned chats with activity inside the chosen window — what the buttons act on.
+  const [inWindow, setInWindow] = useState<number | null>(null);
+  // How far back to reach: 0 = every unowned chat. Old, dead chats are usually
+  // best left alone, so the default is two weeks.
+  const [bulkDays, setBulkDays] = useState(14);
   const [bulkTo, setBulkTo] = useState('');
   const [moveFrom, setMoveFrom] = useState('');
   const [moveTo, setMoveTo] = useState('');
@@ -117,8 +122,7 @@ export function LeadRoutingSettings() {
     const { data: payload } = await api<SettingsPayload>('/api/routing/settings');
     setData(payload);
     if (payload.migrated) {
-      const { data: counts } = await api<{ unowned?: number | null }>('/api/routing/bulk-assign');
-      setUnowned(counts.unowned ?? null);
+
       const next: CloserDraft = {};
       for (const m of payload.members ?? []) {
         const c = payload.closers?.find((x) => x.user_id === m.user_id);
@@ -126,6 +130,14 @@ export function LeadRoutingSettings() {
       }
       setDraft(next);
     }
+  }, []);
+
+  const loadCounts = useCallback(async (d: number) => {
+    const { data: counts } = await api<{ unowned?: number | null; in_window?: number | null }>(
+      `/api/routing/bulk-assign${d > 0 ? `?days=${d}` : ''}`,
+    );
+    setUnowned(counts.unowned ?? null);
+    setInWindow(counts.in_window ?? null);
   }, []);
 
   const loadStats = useCallback(async (d: number) => {
@@ -156,6 +168,10 @@ export function LeadRoutingSettings() {
     if (data?.migrated) void loadStats(days);
   }, [data?.migrated, days, loadStats, rules.length, closers.length]);
 
+  useEffect(() => {
+    if (data?.migrated) void loadCounts(bulkDays);
+  }, [data?.migrated, bulkDays, loadCounts]);
+
   // ---- actions -----------------------------------------------------
 
   async function toggleEnabled(next: boolean) {
@@ -180,7 +196,10 @@ export function LeadRoutingSettings() {
     toast.success(t('enabledSaved'));
   }
 
-  async function bulkAssign(body: { mode: string; to?: string; from?: string }, confirmText: string) {
+  async function bulkAssign(
+    body: { mode: string; to?: string; from?: string; days?: number },
+    confirmText: string,
+  ) {
     if (!window.confirm(confirmText)) return;
     setBusy('bulk');
     const { ok, data: res } = await api<{ updated?: number }>('/api/routing/bulk-assign', { method: 'POST', json: body });
@@ -188,6 +207,7 @@ export function LeadRoutingSettings() {
     if (!ok) return void toast.error(res.error ?? t('loadFailed'));
     toast.success(t('bulkDone', { count: res.updated ?? 0 }));
     await load();
+    await loadCounts(bulkDays);
     await loadStats(days);
   }
 
@@ -402,8 +422,8 @@ export function LeadRoutingSettings() {
               aria-label={t('isolationTitle')}
             />
           </div>
-          {unowned !== null && unowned > 0 && (
-            <Notice tone="warn">{t('isolationWarn', { count: unowned })}</Notice>
+          {inWindow !== null && inWindow > 0 && (
+            <Notice tone="warn">{t('isolationWarn', { count: inWindow })}</Notice>
           )}
         </CardContent>
       </Card>
@@ -415,9 +435,32 @@ export function LeadRoutingSettings() {
           <CardDescription>{t('bulkDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <p className="text-sm font-medium text-foreground">
-            {unowned === null ? '' : unowned === 0 ? t('bulkNone') : t('bulkUnowned', { count: unowned })}
-          </p>
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-foreground">
+              {unowned === null ? '' : unowned === 0 ? t('bulkNone') : t('bulkUnowned', { count: unowned })}
+            </p>
+            {inWindow !== null && unowned !== null && unowned > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {inWindow === 0 ? t('bulkNoneInWindow') : t('bulkInWindow', { count: inWindow })}
+              </p>
+            )}
+          </div>
+
+          <div className="max-w-xs">
+            <CloserSelect
+              id="bulk-days"
+              label={t('bulkWindow')}
+              placeholder=""
+              value={String(bulkDays)}
+              options={[
+                { value: '7', label: t('bulkDaysOption', { days: 7 }) },
+                { value: '14', label: t('bulkDaysOption', { days: 14 }) },
+                { value: '30', label: t('bulkDaysOption', { days: 30 }) },
+                { value: '0', label: t('bulkAllTime') },
+              ]}
+              onChange={(v) => setBulkDays(Number(v))}
+            />
+          </div>
 
           <div className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-[1fr_auto] sm:items-end">
             <CloserSelect
@@ -429,9 +472,12 @@ export function LeadRoutingSettings() {
               onChange={setBulkTo}
             />
             <Button
-              disabled={busy === 'bulk' || !bulkTo || !unowned}
+              disabled={busy === 'bulk' || !bulkTo || !inWindow}
               onClick={() =>
-                bulkAssign({ mode: 'unowned_to_one', to: bulkTo }, t('bulkConfirmUnowned', { count: unowned ?? 0 }))
+                bulkAssign(
+                  { mode: 'unowned_to_one', to: bulkTo, ...(bulkDays > 0 ? { days: bulkDays } : {}) },
+                  t('bulkConfirmUnowned', { count: inWindow ?? 0 }),
+                )
               }
             >
               {t('bulkToOneButton')}
@@ -442,8 +488,13 @@ export function LeadRoutingSettings() {
             <p className="text-sm text-foreground">{t('bulkSpread')}</p>
             <Button
               variant="outline"
-              disabled={busy === 'bulk' || !unowned || closerOptions.length === 0}
-              onClick={() => bulkAssign({ mode: 'unowned_spread' }, t('bulkConfirmUnowned', { count: unowned ?? 0 }))}
+              disabled={busy === 'bulk' || !inWindow || closerOptions.length === 0}
+              onClick={() =>
+                bulkAssign(
+                  { mode: 'unowned_spread', ...(bulkDays > 0 ? { days: bulkDays } : {}) },
+                  t('bulkConfirmUnowned', { count: inWindow ?? 0 }),
+                )
+              }
             >
               {t('bulkSpreadButton')}
             </Button>

@@ -2005,9 +2005,9 @@
       "includePaused": "Include paused campaigns",
       "isolationTitle": "Each closer only sees their own chats",
       "isolationDesc": "When on, closers only see the chats that are theirs (and those chats’ contacts). You and the admins see everything. Chats with no owner are visible only to you until you assign them.",
-      "isolationWarn": "There {count, plural, one {is # chat} other {are # chats}} with no owner. Closers will not see {count, plural, one {it} other {them}} until you assign {count, plural, one {it} other {them}}; you can do it below.",
+      "isolationWarn": "{count, plural, one {# chat has} other {# chats have}} no owner in the period chosen below. Closers will not see {count, plural, one {it} other {them}} until you assign {count, plural, one {it} other {them}}; you can do it below.",
       "bulkTitle": "Reassign chats in bulk",
-      "bulkDesc": "Handy for the chats that existed before you turned assignment on. It only changes whose chat it is; no messages are deleted or moved.",
+      "bulkDesc": "Handy for the chats that existed before you turned assignment on. Older chats with no recent activity can stay without an owner: only you see them. It only changes whose chat it is; no messages are deleted or moved.",
       "bulkNone": "There are no chats without an owner.",
       "bulkUnowned": "Chats with no owner: {count}",
       "bulkToOne": "Give every chat with no owner to",
@@ -2020,7 +2020,12 @@
       "bulkMoveButton": "Move chats",
       "bulkConfirmUnowned": "Are you sure? {count, plural, one {# chat} other {# chats}} with no owner will be assigned.",
       "bulkConfirmMove": "Are you sure? All of that closer’s chats will move to the other one.",
-      "bulkDone": "{count, plural, one {# chat reassigned} other {# chats reassigned}}."
+      "bulkDone": "{count, plural, one {# chat reassigned} other {# chats reassigned}}.",
+      "bulkWindow": "Only chats with activity in the last",
+      "bulkDaysOption": "{days} days",
+      "bulkAllTime": "All of them, whatever the date",
+      "bulkInWindow": "With activity in that period: {count}",
+      "bulkNoneInWindow": "There are no ownerless chats with activity in that period."
     }
   },
   "Followups": {

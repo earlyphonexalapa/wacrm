@@ -2005,9 +2005,9 @@
       "includePaused": "Incluir campañas pausadas",
       "isolationTitle": "Cada closer solo ve sus propios chats",
       "isolationDesc": "Con esto activo, los closers solo ven los chats que son suyos (y los contactos de esos chats). Tú y los administradores ven todo. Los chats sin dueño solo los ves tú hasta que los asignes.",
-      "isolationWarn": "Hay {count, plural, one {# chat sin dueño} other {# chats sin dueño}}. Los closers no los verán hasta que los asignes; puedes hacerlo aquí abajo.",
+      "isolationWarn": "Hay {count, plural, one {# chat sin dueño} other {# chats sin dueño}} en el período elegido abajo. Los closers no los verán hasta que los asignes; puedes hacerlo aquí abajo.",
       "bulkTitle": "Reasignar chats de golpe",
-      "bulkDesc": "Útil para los chats que ya existían antes de activar la asignación. Solo cambia de quién es el chat; no borra ni mueve mensajes.",
+      "bulkDesc": "Útil para los chats que ya existían antes de activar la asignación. Los chats más viejos, sin actividad reciente, pueden quedarse sin dueño: solo tú los ves. Solo cambia de quién es el chat; no borra ni mueve mensajes.",
       "bulkNone": "No hay chats sin dueño.",
       "bulkUnowned": "Chats sin dueño: {count}",
       "bulkToOne": "Darle todos los chats sin dueño a",
@@ -2020,7 +2020,12 @@
       "bulkMoveButton": "Mover chats",
       "bulkConfirmUnowned": "¿Seguro? Se asignarán {count, plural, one {# chat} other {# chats}} sin dueño.",
       "bulkConfirmMove": "¿Seguro? Todos los chats de ese closer pasarán al otro.",
-      "bulkDone": "{count, plural, one {# chat reasignado} other {# chats reasignados}}."
+      "bulkDone": "{count, plural, one {# chat reasignado} other {# chats reasignados}}.",
+      "bulkWindow": "Solo chats con actividad en los últimos",
+      "bulkDaysOption": "{days} días",
+      "bulkAllTime": "Todos, sin importar la fecha",
+      "bulkInWindow": "Con actividad en ese período: {count}",
+      "bulkNoneInWindow": "No hay chats sin dueño con actividad en ese período."
     }
   },
   "Followups": {

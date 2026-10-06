@@ -320,16 +320,24 @@ REVOKE ALL ON FUNCTION public.dashboard_period_metrics(DATE, DATE, TEXT, UUID) F
 GRANT EXECUTE ON FUNCTION public.dashboard_period_metrics(DATE, DATE, TEXT, UUID) TO authenticated, service_role;
 
 -- ---- reassign chats in bulk (admin only) --------------------------------------------
---   unowned_to_one   every chat with no owner  -> p_to
---   unowned_spread   every chat with no owner  -> spread evenly across ALL closers
+--   unowned_to_one   chats with no owner  -> p_to
+--   unowned_spread   chats with no owner  -> spread evenly across ALL closers
 --   move             every chat owned by p_from -> p_to
+-- For the two "unowned" modes, p_days limits it to chats whose last message
+-- is within that many days (NULL = every unowned chat) — an account can have
+-- thousands of old, dead chats nobody needs to hand out.
 -- Returns how many chats changed. Marked 'manual' so the routing summary
 -- doesn't count them as campaign leads.
+
+-- The earlier three-argument version would make a named-argument call
+-- ambiguous, so drop it before creating this one.
+DROP FUNCTION IF EXISTS public.lead_routing_bulk_assign(TEXT, UUID, UUID);
 
 CREATE OR REPLACE FUNCTION public.lead_routing_bulk_assign(
   p_mode TEXT,
   p_to UUID DEFAULT NULL,
-  p_from UUID DEFAULT NULL
+  p_from UUID DEFAULT NULL,
+  p_days INTEGER DEFAULT NULL
 )
 RETURNS INTEGER
 LANGUAGE plpgsql
@@ -340,6 +348,7 @@ DECLARE
   v_account UUID;
   v_count INTEGER := 0;
   v_closers UUID[];
+  v_cutoff TIMESTAMPTZ;
 BEGIN
   SELECT p.account_id INTO v_account
   FROM profiles p
@@ -364,10 +373,16 @@ BEGIN
     RAISE EXCEPTION 'Choose a different closer to move the chats from' USING ERRCODE = '22023';
   END IF;
 
+  IF p_days IS NOT NULL AND (p_days < 1 OR p_days > 3650) THEN
+    RAISE EXCEPTION 'p_days must be between 1 and 3650' USING ERRCODE = '22023';
+  END IF;
+  v_cutoff := CASE WHEN p_days IS NULL THEN NULL ELSE now() - make_interval(days => p_days) END;
+
   IF p_mode = 'unowned_to_one' THEN
     UPDATE conversations cv
        SET owner_agent_id = p_to, owner_source = 'manual', owner_assigned_at = now()
-     WHERE cv.account_id = v_account AND cv.owner_agent_id IS NULL;
+     WHERE cv.account_id = v_account AND cv.owner_agent_id IS NULL
+       AND (v_cutoff IS NULL OR cv.last_message_at >= v_cutoff);
     GET DIAGNOSTICS v_count = ROW_COUNT;
 
   ELSIF p_mode = 'move' THEN
@@ -388,6 +403,7 @@ BEGIN
              row_number() OVER (ORDER BY cv.last_message_at DESC NULLS LAST, cv.id) AS rn
       FROM conversations cv
       WHERE cv.account_id = v_account AND cv.owner_agent_id IS NULL
+        AND (v_cutoff IS NULL OR cv.last_message_at >= v_cutoff)
     )
     UPDATE conversations cv
        SET owner_agent_id = v_closers[1 + ((n.rn - 1) % array_length(v_closers, 1))::int],
@@ -402,9 +418,9 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION public.lead_routing_bulk_assign(TEXT, UUID, UUID) OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.lead_routing_bulk_assign(TEXT, UUID, UUID) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.lead_routing_bulk_assign(TEXT, UUID, UUID) TO authenticated, service_role;
+ALTER FUNCTION public.lead_routing_bulk_assign(TEXT, UUID, UUID, INTEGER) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.lead_routing_bulk_assign(TEXT, UUID, UUID, INTEGER) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.lead_routing_bulk_assign(TEXT, UUID, UUID, INTEGER) TO authenticated, service_role;
 
 -- ---- change a chat's owner ------------------------------------------------------
 -- A plain UPDATE can't do this for a closer: Postgres also checks the NEW row
