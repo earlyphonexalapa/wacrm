@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from 'react'
-import { UserCheck, UserPlus } from 'lucide-react'
+import { BadgeDollarSign, UserCheck, UserPlus } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import type { Granularity } from '@/lib/dashboard/period'
 import type { PeriodDayPoint } from '@/lib/dashboard/types'
@@ -16,7 +16,7 @@ interface NewContactsChartProps {
   /** Total days in the period, for the per-day average. */
   days: number
   /** Which series to draw. Defaults to new contacts. */
-  metric?: 'newContacts' | 'qualifiedLeads'
+  metric?: 'newContacts' | 'qualifiedLeads' | 'sales'
 }
 
 const TEXT = {
@@ -39,6 +39,16 @@ const TEXT = {
     emptyHint: 'noLeadsHint',
     tooltip: 'leadsTooltip',
     icon: UserCheck,
+  },
+  sales: {
+    day: 'salesPerDay',
+    week: 'salesPerWeek',
+    month: 'salesPerMonth',
+    desc: 'salesChartDesc',
+    empty: 'noSales',
+    emptyHint: 'noSalesHint',
+    tooltip: 'salesTooltip',
+    icon: BadgeDollarSign,
   },
 } as const
 

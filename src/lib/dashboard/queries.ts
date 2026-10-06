@@ -410,8 +410,34 @@ export async function loadPeriodStats(
   from: string | null,
   to: string,
   timeZone: string,
+  /** Only for admins: show one closer's numbers. Closers are pinned to their own by the database. */
+  ownerId: string | null = null,
 ): Promise<PeriodDayPoint[]> {
   const args = { p_from: from, p_to: to, p_tz: timeZone }
+
+  // Newest function (migration 056): per-closer scope plus sales.
+  const metrics = await db.rpc('dashboard_period_metrics', { ...args, p_owner: ownerId })
+  if (!metrics.error) {
+    return ((metrics.data ?? []) as {
+      day: string
+      new_contacts: number
+      new_conversations: number
+      incoming_messages: number
+      outgoing_messages: number
+      qualified_leads: number
+      sales_count: number
+    }[]).map((r) => ({
+      day: r.day,
+      newContacts: r.new_contacts,
+      newConversations: r.new_conversations,
+      incoming: r.incoming_messages,
+      outgoing: r.outgoing_messages,
+      qualifiedLeads: r.qualified_leads,
+      sales: r.sales_count,
+    }))
+  }
+
+  // A database that hasn't run 056 yet: the older, account-wide functions.
   const [stats, leads] = await Promise.all([
     db.rpc('dashboard_period_stats', args),
     db.rpc('dashboard_qualified_leads', args),
@@ -438,5 +464,6 @@ export async function loadPeriodStats(
     incoming: r.incoming_messages,
     outgoing: r.outgoing_messages,
     qualifiedLeads: leadsByDay.get(r.day) ?? 0,
+    sales: 0,
   }))
 }

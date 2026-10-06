@@ -1,10 +1,13 @@
 "use client"
 
-import { MessageSquare, Send, UserCheck, UserPlus } from 'lucide-react'
+import { BadgeDollarSign, MessageSquare, Percent, Send, UserCheck, UserPlus } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { MetricCard } from './metric-card'
 import { SkeletonCard } from './skeleton'
-import { percentChange, type PeriodTotals } from '@/lib/dashboard/period'
+import { conversionPct, percentChange, type PeriodTotals } from '@/lib/dashboard/period'
+
+// Six cards: 3 x 2 on laptops, a single row of six only on very wide screens.
+const GRID = 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6'
 
 interface PeriodSummaryProps {
   loading: boolean
@@ -20,13 +23,37 @@ export function PeriodSummary({ loading, totals, previous, days }: PeriodSummary
 
   if (loading || !totals) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className={GRID}>
+        {Array.from({ length: 6 }).map((_, i) => (
           <SkeletonCard key={i} />
         ))}
       </div>
     )
   }
+
+  const conv = conversionPct(totals.sales, totals.newContacts)
+  const prevConv = previous ? conversionPct(previous.sales, previous.newContacts) : null
+  const conversionCard = (
+    <MetricCard
+      title={t('conversion')}
+      value={conv === null ? '—' : `${conv.toLocaleString()}%`}
+      icon={Percent}
+      {...(conv !== null && prevConv !== null
+        ? {
+            delta: {
+              sign: Math.round((conv - prevConv) * 10),
+              label:
+                conv === prevConv
+                  ? t('conversionSame', { previous: `${prevConv.toLocaleString()}%` })
+                  : t('conversionVsPrevious', {
+                      delta: `${conv > prevConv ? '+' : ''}${(Math.round((conv - prevConv) * 10) / 10).toLocaleString()}`,
+                      previous: `${prevConv.toLocaleString()}%`,
+                    }),
+            },
+          }
+        : { subtitle: t('conversionHint') })}
+    />
+  )
 
   const avg = (n: number) => (days > 0 ? Math.round((n / days) * 10) / 10 : 0)
 
@@ -64,11 +91,13 @@ export function PeriodSummary({ loading, totals, previous, days }: PeriodSummary
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className={GRID}>
       {card(t('newContacts'), UserPlus, totals.newContacts, previous ? previous.newContacts : null)}
       {card(t('messagesIn'), MessageSquare, totals.incoming, previous ? previous.incoming : null)}
       {card(t('messagesOut'), Send, totals.outgoing, previous ? previous.outgoing : null)}
       {card(t('qualifiedLeads'), UserCheck, totals.qualifiedLeads, previous ? previous.qualifiedLeads : null)}
+      {card(t('sales'), BadgeDollarSign, totals.sales, previous ? previous.sales : null)}
+      {conversionCard}
     </div>
   )
 }

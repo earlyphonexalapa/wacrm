@@ -21,12 +21,24 @@ export async function GET() {
   try {
     const { supabase, accountId } = await requireRole('admin')
 
-    const [settings, closers, rules, members] = await Promise.all([
-      supabase
+    // restrict_closers arrived with migration 056; fall back without it so
+    // the page still loads on a database that hasn't run it yet.
+    const readSettings = async () => {
+      const full = await supabase
+        .from('lead_routing_settings')
+        .select('enabled, ads_access_token, last_error, last_error_at, restrict_closers')
+        .eq('account_id', accountId)
+        .maybeSingle();
+      if (!full.error) return full;
+      return supabase
         .from('lead_routing_settings')
         .select('enabled, ads_access_token, last_error, last_error_at')
         .eq('account_id', accountId)
-        .maybeSingle(),
+        .maybeSingle();
+    };
+
+    const [settings, closers, rules, members] = await Promise.all([
+      readSettings(),
       supabase
         .from('lead_routing_closers')
         .select('user_id, receives_organic')
@@ -54,6 +66,8 @@ export async function GET() {
     return NextResponse.json({
       migrated: true,
       enabled: settings.data?.enabled === true,
+      restrict_closers:
+        (settings.data as { restrict_closers?: boolean } | null)?.restrict_closers === true,
       has_token: Boolean(settings.data?.ads_access_token),
       last_error: settings.data?.last_error ?? null,
       last_error_at: settings.data?.last_error_at ?? null,
@@ -94,6 +108,7 @@ export async function POST(request: Request) {
     const bad = (message: string) => NextResponse.json({ error: message }, { status: 400 })
 
     const enabled = typeof body.enabled === 'boolean' ? body.enabled : undefined
+    const restrictClosers = typeof body.restrict_closers === 'boolean' ? body.restrict_closers : undefined
 
     // ---- closers (validated first: enabling needs at least one) ----
     let closersInput: CloserInput[] | undefined
@@ -119,7 +134,7 @@ export async function POST(request: Request) {
       }
     }
 
-    if (enabled === true) {
+    if (enabled === true || restrictClosers === true) {
       const count =
         closersInput !== undefined
           ? closersInput.length
@@ -129,12 +144,13 @@ export async function POST(request: Request) {
                 .select('user_id', { count: 'exact', head: true })
                 .eq('account_id', accountId)
             ).count ?? 0
-      if (count === 0) return bad('Add at least one closer before switching lead routing on')
+      if (count === 0) return bad('Add at least one closer before switching this on')
     }
 
     // ---- Meta token ----
     const settingsPatch: Record<string, unknown> = {}
     if (enabled !== undefined) settingsPatch.enabled = enabled
+    if (restrictClosers !== undefined) settingsPatch.restrict_closers = restrictClosers
     let adAccounts: number | undefined
     if (body.ads_access_token === null) {
       settingsPatch.ads_access_token = null
@@ -164,6 +180,12 @@ export async function POST(request: Request) {
         )
       if (error) {
         if (isMissingRoutingTable(error)) return NextResponse.json(NEEDS_MIGRATION, { status: 503 })
+        if (restrictClosers !== undefined && /restrict_closers/.test(error.message ?? '')) {
+          return NextResponse.json(
+            { error: 'Closer isolation needs the latest database update (migration 056).' },
+            { status: 503 },
+          )
+        }
         console.error('[routing/settings POST] settings error:', error)
         return NextResponse.json({ error: 'Failed to save lead routing settings' }, { status: 500 })
       }

@@ -147,6 +147,7 @@ export interface PeriodTotals {
   incoming: number
   outgoing: number
   qualifiedLeads: number
+  sales: number
 }
 
 export function sumPoints(points: PeriodDayPoint[]): PeriodTotals {
@@ -157,8 +158,9 @@ export function sumPoints(points: PeriodDayPoint[]): PeriodTotals {
       incoming: acc.incoming + p.incoming,
       outgoing: acc.outgoing + p.outgoing,
       qualifiedLeads: acc.qualifiedLeads + p.qualifiedLeads,
+      sales: acc.sales + p.sales,
     }),
-    { newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0, qualifiedLeads: 0 },
+    { newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0, qualifiedLeads: 0, sales: 0 },
   )
 }
 
@@ -185,15 +187,25 @@ export function bucketPoints(points: PeriodDayPoint[], g: Granularity): PeriodDa
   const out = new Map<string, PeriodDayPoint>()
   for (const p of points) {
     const key = bucketStart(p.day, g)
-    const cur = out.get(key) ?? { day: key, newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0, qualifiedLeads: 0 }
+    const cur = out.get(key) ?? { day: key, newContacts: 0, newConversations: 0, incoming: 0, outgoing: 0, qualifiedLeads: 0, sales: 0 }
     cur.newContacts += p.newContacts
     cur.newConversations += p.newConversations
     cur.incoming += p.incoming
     cur.outgoing += p.outgoing
     cur.qualifiedLeads += p.qualifiedLeads
+    cur.sales += p.sales
     out.set(key, cur)
   }
   return [...out.values()].sort((a, b) => (a.day < b.day ? -1 : 1))
+}
+
+/**
+ * WhatsApp conversion: sales (the "Pagado" tag) over new contacts in the same
+ * period, as a percent with one decimal. Null when there were no new contacts.
+ */
+export function conversionPct(sales: number, newContacts: number): number | null {
+  if (newContacts <= 0) return null
+  return Math.round((sales / newContacts) * 1000) / 10
 }
 
 /** Percent change of `current` vs `previous`; null when there's no base to compare to. */

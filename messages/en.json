@@ -194,7 +194,23 @@
       "leadsChartDesc": "How many contacts got the “Lead Calificado” tag during the selected period.",
       "noLeads": "No qualified leads in this period",
       "noLeadsHint": "A lead is counted when the “Lead Calificado” tag is added to a contact.",
-      "leadsTooltip": "{label}: {count, plural, one {# qualified lead} other {# qualified leads}}"
+      "leadsTooltip": "{label}: {count, plural, one {# qualified lead} other {# qualified leads}}",
+      "sales": "Sales",
+      "conversion": "WhatsApp conversion",
+      "conversionHint": "Sales ÷ new contacts",
+      "conversionSame": "Same as the previous period ({previous})",
+      "conversionVsPrevious": "{delta} pts vs previous period ({previous})",
+      "salesPerDay": "Sales per day",
+      "salesPerWeek": "Sales per week",
+      "salesPerMonth": "Sales per month",
+      "salesChartDesc": "How many contacts got the “Pagado” tag during the selected period.",
+      "noSales": "No sales in this period",
+      "noSalesHint": "A sale is counted when the “Pagado” tag is added to a contact.",
+      "salesTooltip": "{label}: {count, plural, one {# sale} other {# sales}}",
+      "scopeLabel": "Show metrics for",
+      "scopeAll": "Whole CRM",
+      "scopeMine": "Your metrics",
+      "exportScope": "Metrics for"
     }
   },
   "Inbox": {
@@ -1986,7 +2002,25 @@
       "leadsCount": "{count, plural, one {# lead} other {# leads}}",
       "unknownCloser": "Someone",
       "unnamedCampaign": "Unnamed campaign",
-      "includePaused": "Include paused campaigns"
+      "includePaused": "Include paused campaigns",
+      "isolationTitle": "Each closer only sees their own chats",
+      "isolationDesc": "When on, closers only see the chats that are theirs (and those chats’ contacts). You and the admins see everything. Chats with no owner are visible only to you until you assign them.",
+      "isolationWarn": "There {count, plural, one {is # chat} other {are # chats}} with no owner. Closers will not see {count, plural, one {it} other {them}} until you assign {count, plural, one {it} other {them}}; you can do it below.",
+      "bulkTitle": "Reassign chats in bulk",
+      "bulkDesc": "Handy for the chats that existed before you turned assignment on. It only changes whose chat it is; no messages are deleted or moved.",
+      "bulkNone": "There are no chats without an owner.",
+      "bulkUnowned": "Chats with no owner: {count}",
+      "bulkToOne": "Give every chat with no owner to",
+      "bulkToOneButton": "Assign",
+      "bulkSpread": "Spread chats with no owner evenly across all closers",
+      "bulkSpreadButton": "Spread",
+      "bulkMove": "Move all of one closer’s chats to another",
+      "bulkMoveFrom": "From",
+      "bulkMoveTo": "To",
+      "bulkMoveButton": "Move chats",
+      "bulkConfirmUnowned": "Are you sure? {count, plural, one {# chat} other {# chats}} with no owner will be assigned.",
+      "bulkConfirmMove": "Are you sure? All of that closer’s chats will move to the other one.",
+      "bulkDone": "{count, plural, one {# chat reassigned} other {# chats reassigned}}."
     }
   },
   "Followups": {

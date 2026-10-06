@@ -901,15 +901,14 @@ export function MessageThread({
     async (ownerId: string | null) => {
       if (!conversation) return;
 
+      // Goes through a SQL function rather than a plain UPDATE: Postgres
+      // rejects an UPDATE that leaves the row invisible to the person making
+      // it, which is exactly what handing a chat to a teammate does.
       const supabase = createClient();
-      const { error } = await supabase
-        .from("conversations")
-        .update({
-          owner_agent_id: ownerId,
-          owner_source: ownerId ? "manual" : null,
-          owner_assigned_at: ownerId ? new Date().toISOString() : null,
-        })
-        .eq("id", conversation.id);
+      const { error } = await supabase.rpc("lead_routing_set_owner", {
+        p_conversation: conversation.id,
+        p_owner: ownerId,
+      });
 
       if (error) {
         console.error("Failed to update the closer:", error);

@@ -35,6 +35,7 @@ interface SettingsPayload {
   migrated: boolean;
   error?: string;
   enabled?: boolean;
+  restrict_closers?: boolean;
   has_token?: boolean;
   last_error?: string | null;
   closers?: { user_id: string; receives_organic: boolean }[];
@@ -77,6 +78,12 @@ export function LeadRoutingSettings() {
   const [draft, setDraft] = useState<CloserDraft>({});
   const [busy, setBusy] = useState<string | null>(null);
 
+  // Reassigning chats in bulk
+  const [unowned, setUnowned] = useState<number | null>(null);
+  const [bulkTo, setBulkTo] = useState('');
+  const [moveFrom, setMoveFrom] = useState('');
+  const [moveTo, setMoveTo] = useState('');
+
   const [token, setToken] = useState('');
   const [nameValue, setNameValue] = useState('');
   const [nameCloser, setNameCloser] = useState('');
@@ -110,6 +117,8 @@ export function LeadRoutingSettings() {
     const { data: payload } = await api<SettingsPayload>('/api/routing/settings');
     setData(payload);
     if (payload.migrated) {
+      const { data: counts } = await api<{ unowned?: number | null }>('/api/routing/bulk-assign');
+      setUnowned(counts.unowned ?? null);
       const next: CloserDraft = {};
       for (const m of payload.members ?? []) {
         const c = payload.closers?.find((x) => x.user_id === m.user_id);
@@ -160,6 +169,26 @@ export function LeadRoutingSettings() {
     if (!ok) return void toast.error(res.error ?? t('loadFailed'));
     setData((d) => (d ? { ...d, enabled: next } : d));
     toast.success(t('enabledSaved'));
+  }
+
+  async function toggleRestrict(next: boolean) {
+    setBusy('restrict');
+    const { ok, data: res } = await api('/api/routing/settings', { method: 'POST', json: { restrict_closers: next } });
+    setBusy(null);
+    if (!ok) return void toast.error(res.error ?? t('loadFailed'));
+    setData((d) => (d ? { ...d, restrict_closers: next } : d));
+    toast.success(t('enabledSaved'));
+  }
+
+  async function bulkAssign(body: { mode: string; to?: string; from?: string }, confirmText: string) {
+    if (!window.confirm(confirmText)) return;
+    setBusy('bulk');
+    const { ok, data: res } = await api<{ updated?: number }>('/api/routing/bulk-assign', { method: 'POST', json: body });
+    setBusy(null);
+    if (!ok) return void toast.error(res.error ?? t('loadFailed'));
+    toast.success(t('bulkDone', { count: res.updated ?? 0 }));
+    await load();
+    await loadStats(days);
   }
 
   async function saveClosers() {
@@ -355,6 +384,99 @@ export function LeadRoutingSettings() {
             {busy === 'closers' && <Loader2 className="size-4 animate-spin" />}
             {t('closersSave')}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Closer isolation */}
+      <Card>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-foreground">{t('isolationTitle')}</p>
+              <p className="text-xs text-muted-foreground">{t('isolationDesc')}</p>
+            </div>
+            <Switch
+              checked={data.restrict_closers === true}
+              onCheckedChange={toggleRestrict}
+              disabled={busy === 'restrict'}
+              aria-label={t('isolationTitle')}
+            />
+          </div>
+          {unowned !== null && unowned > 0 && (
+            <Notice tone="warn">{t('isolationWarn', { count: unowned })}</Notice>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Reassign chats in bulk */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('bulkTitle')}</CardTitle>
+          <CardDescription>{t('bulkDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <p className="text-sm font-medium text-foreground">
+            {unowned === null ? '' : unowned === 0 ? t('bulkNone') : t('bulkUnowned', { count: unowned })}
+          </p>
+
+          <div className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <CloserSelect
+              id="bulk-to"
+              label={t('bulkToOne')}
+              placeholder={t('pickCloserPlaceholder')}
+              value={bulkTo}
+              options={closerOptions}
+              onChange={setBulkTo}
+            />
+            <Button
+              disabled={busy === 'bulk' || !bulkTo || !unowned}
+              onClick={() =>
+                bulkAssign({ mode: 'unowned_to_one', to: bulkTo }, t('bulkConfirmUnowned', { count: unowned ?? 0 }))
+              }
+            >
+              {t('bulkToOneButton')}
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3">
+            <p className="text-sm text-foreground">{t('bulkSpread')}</p>
+            <Button
+              variant="outline"
+              disabled={busy === 'bulk' || !unowned || closerOptions.length === 0}
+              onClick={() => bulkAssign({ mode: 'unowned_spread' }, t('bulkConfirmUnowned', { count: unowned ?? 0 }))}
+            >
+              {t('bulkSpreadButton')}
+            </Button>
+          </div>
+
+          <div className="space-y-3 rounded-md border border-border p-3">
+            <p className="text-sm text-foreground">{t('bulkMove')}</p>
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <CloserSelect
+                id="bulk-from"
+                label={t('bulkMoveFrom')}
+                placeholder={t('pickCloserPlaceholder')}
+                value={moveFrom}
+                options={closerOptions}
+                onChange={setMoveFrom}
+              />
+              <CloserSelect
+                id="bulk-move-to"
+                label={t('bulkMoveTo')}
+                placeholder={t('pickCloserPlaceholder')}
+                value={moveTo}
+                options={closerOptions}
+                onChange={setMoveTo}
+              />
+              <Button
+                variant="outline"
+                disabled={busy === 'bulk' || !moveFrom || !moveTo || moveFrom === moveTo}
+                onClick={() => bulkAssign({ mode: 'move', from: moveFrom, to: moveTo }, t('bulkConfirmMove'))}
+              >
+                {t('bulkMoveButton')}
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

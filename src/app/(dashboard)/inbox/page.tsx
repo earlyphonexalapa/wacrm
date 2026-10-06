@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import { useCloserIsolation } from "@/hooks/use-closer-isolation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -41,6 +42,9 @@ function InboxPageInner() {
    * automatically instead of showing the empty center panel.
    */
   const deepLinkConvId = searchParams.get("c");
+  // With "each closer only sees their own chats" on, closers can't move a
+  // chat to someone else — only admins can.
+  const isolation = useCloserIsolation();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] =
@@ -637,7 +641,9 @@ function InboxPageInner() {
             onUpdateMessage={handleUpdateMessage}
             onStatusChange={handleStatusChange}
             onAssignChange={handleAssignChange}
-            showOwner={conversations.some((c) => c.owner_agent_id)}
+            showOwner={
+              conversations.some((c) => c.owner_agent_id) && !isolation.restricted
+            }
             onOwnerChange={handleOwnerChange}
             onBack={handleCloseConversation}
             resyncToken={resyncToken}

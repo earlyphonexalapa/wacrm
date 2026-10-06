@@ -194,7 +194,23 @@
       "leadsChartDesc": "Cuántos contactos recibieron la etiqueta “Lead Calificado” durante el período seleccionado.",
       "noLeads": "No hay leads calificados en este período",
       "noLeadsHint": "Un lead se cuenta cuando se le asigna la etiqueta “Lead Calificado” a un contacto.",
-      "leadsTooltip": "{label}: {count, plural, one {# lead calificado} other {# leads calificados}}"
+      "leadsTooltip": "{label}: {count, plural, one {# lead calificado} other {# leads calificados}}",
+      "sales": "Ventas",
+      "conversion": "Conversión de WhatsApp",
+      "conversionHint": "Ventas ÷ contactos nuevos",
+      "conversionSame": "Igual que el período anterior ({previous})",
+      "conversionVsPrevious": "{delta} pts vs período anterior ({previous})",
+      "salesPerDay": "Ventas por día",
+      "salesPerWeek": "Ventas por semana",
+      "salesPerMonth": "Ventas por mes",
+      "salesChartDesc": "Cuántos contactos recibieron la etiqueta “Pagado” durante el período seleccionado.",
+      "noSales": "No hay ventas en este período",
+      "noSalesHint": "Una venta se cuenta cuando se asigna la etiqueta “Pagado” a un contacto.",
+      "salesTooltip": "{label}: {count, plural, one {# venta} other {# ventas}}",
+      "scopeLabel": "Ver métricas de",
+      "scopeAll": "Todo el CRM",
+      "scopeMine": "Tus métricas",
+      "exportScope": "Métricas de"
     }
   },
   "Inbox": {
@@ -1986,7 +2002,25 @@
       "leadsCount": "{count, plural, one {# lead} other {# leads}}",
       "unknownCloser": "Alguien",
       "unnamedCampaign": "Campaña sin nombre",
-      "includePaused": "Incluir campañas pausadas"
+      "includePaused": "Incluir campañas pausadas",
+      "isolationTitle": "Cada closer solo ve sus propios chats",
+      "isolationDesc": "Con esto activo, los closers solo ven los chats que son suyos (y los contactos de esos chats). Tú y los administradores ven todo. Los chats sin dueño solo los ves tú hasta que los asignes.",
+      "isolationWarn": "Hay {count, plural, one {# chat sin dueño} other {# chats sin dueño}}. Los closers no los verán hasta que los asignes; puedes hacerlo aquí abajo.",
+      "bulkTitle": "Reasignar chats de golpe",
+      "bulkDesc": "Útil para los chats que ya existían antes de activar la asignación. Solo cambia de quién es el chat; no borra ni mueve mensajes.",
+      "bulkNone": "No hay chats sin dueño.",
+      "bulkUnowned": "Chats sin dueño: {count}",
+      "bulkToOne": "Darle todos los chats sin dueño a",
+      "bulkToOneButton": "Asignar",
+      "bulkSpread": "Repartir los chats sin dueño parejo entre todos los closers",
+      "bulkSpreadButton": "Repartir",
+      "bulkMove": "Pasar todos los chats de un closer a otro",
+      "bulkMoveFrom": "De",
+      "bulkMoveTo": "A",
+      "bulkMoveButton": "Mover chats",
+      "bulkConfirmUnowned": "¿Seguro? Se asignarán {count, plural, one {# chat} other {# chats}} sin dueño.",
+      "bulkConfirmMove": "¿Seguro? Todos los chats de ese closer pasarán al otro.",
+      "bulkDone": "{count, plural, one {# chat reasignado} other {# chats reasignados}}."
     }
   },
   "Followups": {

@@ -194,7 +194,23 @@
       "leadsChartDesc": "선택한 기간에 “Lead Calificado” 태그가 붙은 연락처 수입니다.",
       "noLeads": "이 기간에는 검증된 리드가 없습니다",
       "noLeadsHint": "연락처에 “Lead Calificado” 태그가 추가되면 리드로 집계됩니다.",
-      "leadsTooltip": "{label}: 검증된 리드 {count}명"
+      "leadsTooltip": "{label}: 검증된 리드 {count}명",
+      "sales": "판매",
+      "conversion": "WhatsApp 전환율",
+      "conversionHint": "판매 ÷ 신규 연락처",
+      "conversionSame": "이전 기간과 동일 ({previous})",
+      "conversionVsPrevious": "이전 기간 대비 {delta}%p ({previous})",
+      "salesPerDay": "일별 판매",
+      "salesPerWeek": "주별 판매",
+      "salesPerMonth": "월별 판매",
+      "salesChartDesc": "선택한 기간에 “Pagado” 태그가 붙은 연락처 수입니다.",
+      "noSales": "이 기간에는 판매가 없습니다",
+      "noSalesHint": "연락처에 “Pagado” 태그가 추가되면 판매로 집계됩니다.",
+      "salesTooltip": "{label}: 판매 {count}건",
+      "scopeLabel": "지표 보기",
+      "scopeAll": "전체 CRM",
+      "scopeMine": "내 지표",
+      "exportScope": "지표 대상"
     }
   },
   "Inbox": {
@@ -1986,7 +2002,25 @@
       "leadsCount": "리드 {count}건",
       "unknownCloser": "누군가",
       "unnamedCampaign": "이름 없는 캠페인",
-      "includePaused": "일시중지된 캠페인 포함"
+      "includePaused": "일시중지된 캠페인 포함",
+      "isolationTitle": "각 클로저는 자신의 채팅만 볼 수 있음",
+      "isolationDesc": "켜면 클로저는 자신의 채팅(과 그 연락처)만 봅니다. 관리자는 모두 볼 수 있습니다. 담당자가 없는 채팅은 배정하기 전까지 관리자만 볼 수 있습니다.",
+      "isolationWarn": "담당자 없는 채팅이 {count}건 있습니다. 배정하기 전까지 클로저에게 보이지 않습니다. 아래에서 배정할 수 있습니다.",
+      "bulkTitle": "채팅 일괄 재배정",
+      "bulkDesc": "배정 기능을 켜기 전에 있던 채팅에 유용합니다. 채팅의 담당자만 바뀌며 메시지는 삭제되거나 이동하지 않습니다.",
+      "bulkNone": "담당자 없는 채팅이 없습니다.",
+      "bulkUnowned": "담당자 없는 채팅: {count}건",
+      "bulkToOne": "담당자 없는 채팅을 모두 다음 사람에게",
+      "bulkToOneButton": "배정",
+      "bulkSpread": "담당자 없는 채팅을 모든 클로저에게 고르게 분배",
+      "bulkSpreadButton": "분배",
+      "bulkMove": "한 클로저의 모든 채팅을 다른 클로저에게 이동",
+      "bulkMoveFrom": "보내는 사람",
+      "bulkMoveTo": "받는 사람",
+      "bulkMoveButton": "채팅 이동",
+      "bulkConfirmUnowned": "정말 진행할까요? 담당자 없는 채팅 {count}건이 배정됩니다.",
+      "bulkConfirmMove": "정말 진행할까요? 해당 클로저의 모든 채팅이 다른 클로저에게 이동합니다.",
+      "bulkDone": "채팅 {count}건이 재배정되었습니다."
     }
   },
   "Followups": {

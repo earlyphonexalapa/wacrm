@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
+import { useCloserIsolation } from '@/hooks/use-closer-isolation'
 import { formatCurrency } from '@/lib/currency'
 import {
   Download,
@@ -12,6 +13,7 @@ import {
   Send,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 import {
   loadActivity,
@@ -68,7 +70,15 @@ export default function DashboardPage() {
   const t = useTranslations('Dashboard.page')
   const tp = useTranslations('Dashboard.period')
   const locale = useLocale()
-  const { defaultCurrency } = useAuth()
+  const { defaultCurrency, canEditSettings, accountId } = useAuth()
+  const isolation = useCloserIsolation()
+
+  // Whose numbers the period section shows. Admins can pick any closer;
+  // a closer is pinned to their own by the database (and sees no picker).
+  const [scope, setScope] = useState<string>('all')
+  const [closerList, setCloserList] = useState<{ id: string; name: string }[]>([])
+  const scopeOwner = canEditSettings && scope !== 'all' ? scope : null
+  const showGeneral = !isolation.restricted && scopeOwner === null
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
 
@@ -90,7 +100,7 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
 
-  const loadAll = useCallback(() => {
+  const loadAll = useCallback((general: boolean) => {
     const db = createClient()
 
     // Kick everything off in parallel. Each block has its own
@@ -100,6 +110,10 @@ export default function DashboardPage() {
       .then((m) => setMetrics(m))
       .catch((err) => console.error('[dashboard] metrics failed:', err))
       .finally(() => setMetricsLoading(false))
+
+    // Pipeline, response time and the activity feed are account-wide, so a
+    // closer whose chats are isolated never loads them.
+    if (!general) return
 
     void loadPipelineDonut(db)
       .then((p) => setPipeline(p))
@@ -121,8 +135,40 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    loadAll()
-  }, [loadAll])
+    // Wait until we know whether this user is isolated, so a closer never
+    // fires the account-wide queries at all.
+    if (isolation.loading) return
+    loadAll(!isolation.restricted)
+  }, [loadAll, isolation.loading, isolation.restricted])
+
+  // Admins' scope picker: the closers of this account, by name.
+  useEffect(() => {
+    if (!canEditSettings || !accountId) return
+    let cancelled = false
+    const db = createClient()
+    void (async () => {
+      const [closers, profiles] = await Promise.all([
+        db.from('lead_routing_closers').select('user_id').eq('account_id', accountId),
+        db.from('profiles').select('user_id, full_name, email').eq('account_id', accountId),
+      ])
+      if (cancelled || closers.error || profiles.error) return
+      const names = new Map(
+        (profiles.data ?? []).map((p: { user_id: string; full_name: string | null; email: string | null }) => [
+          p.user_id,
+          p.full_name?.trim() || p.email || '',
+        ]),
+      )
+      setCloserList(
+        (closers.data ?? [])
+          .map((c: { user_id: string }) => ({ id: c.user_id, name: names.get(c.user_id) ?? '' }))
+          .filter((c) => c.name)
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [canEditSettings, accountId])
 
   useEffect(() => {
     const restored = parseStoredSelection(safeStorage()?.getItem(PERIOD_STORAGE_KEY) ?? null)
@@ -135,14 +181,19 @@ export default function DashboardPage() {
   // A request counter drops stale answers when the user clicks quickly.
   useEffect(() => {
     if (!selectionRestored) return
+    // The first answer decides whether a closer is pinned; don't query with a
+    // scope that is about to change.
+    if (isolation.loading) return
     const id = ++periodRequest.current
     const period = resolvePeriod(selection)
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
     const db = createClient()
 
     Promise.all([
-      loadPeriodStats(db, period.from, period.to, tz),
-      period.previous ? loadPeriodStats(db, period.previous.from, period.previous.to, tz) : Promise.resolve(null),
+      loadPeriodStats(db, period.from, period.to, tz, scopeOwner),
+      period.previous
+        ? loadPeriodStats(db, period.previous.from, period.previous.to, tz, scopeOwner)
+        : Promise.resolve(null),
     ])
       .then(([current, previous]) => {
         if (id !== periodRequest.current) return
@@ -157,7 +208,12 @@ export default function DashboardPage() {
       .finally(() => {
         if (id === periodRequest.current) setPeriodLoading(false)
       })
-  }, [selection, selectionRestored, tp])
+  }, [selection, selectionRestored, tp, scopeOwner, isolation.loading])
+
+  const handleScopeChange = useCallback((next: string) => {
+    setPeriodLoading(true)
+    setScope(next)
+  }, [])
 
   const handleSelectionChange = useCallback((next: PeriodSelection) => {
     setPeriodLoading(true)
@@ -198,6 +254,12 @@ export default function DashboardPage() {
     const csv = buildPeriodCsv({
       points: periodPoints,
       periodLabel: tp(PRESET_KEY[selection.preset] as never),
+      scopeLabel:
+        scopeOwner === null
+          ? isolation.restricted
+            ? tp('scopeMine')
+            : tp('scopeAll')
+          : (closerList.find((c) => c.id === scopeOwner)?.name ?? tp('scopeAll')),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       generatedAt: new Date().toLocaleString(locale),
       labels: {
@@ -218,6 +280,9 @@ export default function DashboardPage() {
         messagesIn: tp('messagesIn'),
         messagesOut: tp('messagesOut'),
         qualifiedLeads: tp('qualifiedLeads'),
+        sales: tp('sales'),
+        conversion: tp('conversion'),
+        scope: tp('exportScope'),
       },
     })
     downloadTextFile(
@@ -226,7 +291,7 @@ export default function DashboardPage() {
       'text/csv;charset=utf-8;',
     )
     toast.success(tp('exportDone'))
-  }, [periodPoints, selection.preset, tp, locale])
+  }, [periodPoints, selection.preset, tp, locale, scopeOwner, closerList, isolation.restricted])
 
   return (
     <div className="space-y-5">
@@ -245,6 +310,30 @@ export default function DashboardPage() {
           <p className="text-xs text-muted-foreground">
             {rangeText && tp('showing', { range: rangeText, days: periodView.days })}
           </p>
+          <div className="flex flex-wrap items-center gap-2">
+          {isolation.restricted ? (
+            <span className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
+              {tp('scopeMine')}
+            </span>
+          ) : canEditSettings && closerList.length > 0 ? (
+            <Select value={scope} onValueChange={(v) => v && handleScopeChange(v)}>
+              <SelectTrigger className="h-8 w-52" aria-label={tp('scopeLabel')}>
+                <SelectValue>
+                  {scope === 'all'
+                    ? tp('scopeAll')
+                    : (closerList.find((c) => c.id === scope)?.name ?? tp('scopeAll'))}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{tp('scopeAll')}</SelectItem>
+                {closerList.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <Button
             variant="outline"
             size="sm"
@@ -254,6 +343,7 @@ export default function DashboardPage() {
             <Download className="size-4" />
             {tp('exportButton')}
           </Button>
+          </div>
         </div>
         <PeriodSummary
           loading={periodLoading}
@@ -275,10 +365,18 @@ export default function DashboardPage() {
             granularity={periodView.granularity}
             days={periodView.days}
           />
+          <NewContactsChart
+            metric="sales"
+            data={periodView.bucketed}
+            loading={periodLoading}
+            granularity={periodView.granularity}
+            days={periodView.days}
+          />
         </div>
       </div>
 
-      {/* Metric cards */}
+      {/* Metric cards — account-wide, general view only */}
+      {showGeneral && (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {metricsLoading || !metrics ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
@@ -334,6 +432,7 @@ export default function DashboardPage() {
           </>
         )}
       </div>
+      )}
 
       {/* Quick actions */}
       <QuickActions />
@@ -346,27 +445,33 @@ export default function DashboardPage() {
           this, the pipeline card rendered at its natural (shorter)
           height while the line chart drove the row height. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div className="h-full lg:col-span-3">
+        <div className={showGeneral ? 'h-full lg:col-span-3' : 'h-full lg:col-span-5'}>
           <ConversationsChart
             data={periodView.bucketed}
             loading={periodLoading}
             granularity={periodView.granularity}
           />
         </div>
-        <div className="h-full lg:col-span-2">
-          <PipelineDonut
-            data={pipeline}
-            loading={pipelineLoading}
-            currency={defaultCurrency}
-          />
-        </div>
+        {showGeneral && (
+          <div className="h-full lg:col-span-2">
+            <PipelineDonut
+              data={pipeline}
+              loading={pipelineLoading}
+              currency={defaultCurrency}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Response time */}
-      <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
+      {showGeneral && (
+        <>
+          {/* Response time */}
+          <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
 
-      {/* Activity feed */}
-      <ActivityFeed items={activity} loading={activityLoading} />
+          {/* Activity feed */}
+          <ActivityFeed items={activity} loading={activityLoading} />
+        </>
+      )}
     </div>
   )
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { useCloserIsolation } from "@/hooks/use-closer-isolation";
 import {
   CONVERSATION_SELECT,
   loadAlwaysLoadedConversations,
@@ -59,6 +60,7 @@ export function ConversationList({
   const t = useTranslations("Inbox.conversationList");
   const { user } = useAuth();
   const userId = user?.id ?? null;
+  const { restricted } = useCloserIsolation();
 
   // "My leads" only makes sense once lead assignment hands out owners.
   const hasOwners = useMemo(
@@ -197,6 +199,15 @@ export function ConversationList({
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [conversations]);
+
+  // A closer only has their own chats loaded, so only offer the tags that
+  // actually appear on them — not the account's whole tag catalogue.
+  const tagOptions = useMemo(() => {
+    if (!restricted) return tags;
+    const used = new Set<string>();
+    for (const c of conversations) for (const tg of c.contact?.tags ?? []) used.add(tg.id);
+    return tags.filter((tg) => used.has(tg.id));
+  }, [restricted, tags, conversations]);
 
   const tagsById = useMemo(() => {
     const m = new Map<string, Tag>();
@@ -342,7 +353,7 @@ export function ConversationList({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {tags.length > 0 && (
+          {tagOptions.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger
                 className={cn(
@@ -364,7 +375,7 @@ export function ConversationList({
                 align="start"
                 className="max-h-64 w-56 border-border bg-popover"
               >
-                {tags.map((t) => (
+                {tagOptions.map((t) => (
                   <DropdownMenuCheckboxItem
                     key={t.id}
                     checked={selectedTagIds.includes(t.id)}

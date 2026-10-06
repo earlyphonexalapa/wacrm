@@ -76,4 +76,6 @@ export interface PeriodDayPoint {
   outgoing: number
   /** Contacts given the "Lead Calificado" tag that day (migration 054). */
   qualifiedLeads: number
+  /** Contacts given the "Pagado" tag that day — a sale (migration 056). */
+  sales: number
 }
