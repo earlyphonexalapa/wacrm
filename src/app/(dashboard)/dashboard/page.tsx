@@ -215,7 +215,6 @@ export default function DashboardPage() {
         dailySection: tp('exportDailySection'),
         date: tp('exportDate'),
         newContacts: tp('newContacts'),
-        newConversations: tp('newConversations'),
         messagesIn: tp('messagesIn'),
         messagesOut: tp('messagesOut'),
         qualifiedLeads: tp('qualifiedLeads'),

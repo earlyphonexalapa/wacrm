@@ -24,7 +24,6 @@ export interface PeriodExportLabels {
   dailySection: string
   date: string
   newContacts: string
-  newConversations: string
   messagesIn: string
   messagesOut: string
   qualifiedLeads: string
@@ -66,7 +65,6 @@ export function buildPeriodCsv(input: BuildPeriodCsvInput): string {
     row(labels.totalSection),
     row(labels.metric, labels.total, labels.avgPerDay),
     row(labels.newContacts, totals.newContacts, perDay(totals.newContacts, days)),
-    row(labels.newConversations, totals.newConversations, perDay(totals.newConversations, days)),
     row(labels.messagesIn, totals.incoming, perDay(totals.incoming, days)),
     row(labels.messagesOut, totals.outgoing, perDay(totals.outgoing, days)),
     row(labels.qualifiedLeads, totals.qualifiedLeads, perDay(totals.qualifiedLeads, days)),
@@ -75,13 +73,12 @@ export function buildPeriodCsv(input: BuildPeriodCsvInput): string {
     row(
       labels.date,
       labels.newContacts,
-      labels.newConversations,
       labels.messagesIn,
       labels.messagesOut,
       labels.qualifiedLeads,
     ),
     ...points.map((p) =>
-      row(p.day, p.newContacts, p.newConversations, p.incoming, p.outgoing, p.qualifiedLeads),
+      row(p.day, p.newContacts, p.incoming, p.outgoing, p.qualifiedLeads),
     ),
   ]
 

@@ -1,14 +1,10 @@
 "use client"
 
-import { MessageSquare, Send, UserCheck, UserPlus, Users } from 'lucide-react'
+import { MessageSquare, Send, UserCheck, UserPlus } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { MetricCard } from './metric-card'
 import { SkeletonCard } from './skeleton'
 import { percentChange, type PeriodTotals } from '@/lib/dashboard/period'
-
-// Five cards: 3 + 2 on laptops, a single row of five only on wide screens
-// where each card is still wide enough for its title and comparison line.
-const GRID = 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5'
 
 interface PeriodSummaryProps {
   loading: boolean
@@ -24,8 +20,8 @@ export function PeriodSummary({ loading, totals, previous, days }: PeriodSummary
 
   if (loading || !totals) {
     return (
-      <div className={GRID}>
-        {Array.from({ length: 5 }).map((_, i) => (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
           <SkeletonCard key={i} />
         ))}
       </div>
@@ -36,7 +32,7 @@ export function PeriodSummary({ loading, totals, previous, days }: PeriodSummary
 
   const card = (
     title: string,
-    icon: typeof Users,
+    icon: typeof UserPlus,
     current: number,
     prev: number | null,
   ) => {
@@ -68,9 +64,8 @@ export function PeriodSummary({ loading, totals, previous, days }: PeriodSummary
   }
 
   return (
-    <div className={GRID}>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {card(t('newContacts'), UserPlus, totals.newContacts, previous ? previous.newContacts : null)}
-      {card(t('newConversations'), Users, totals.newConversations, previous ? previous.newConversations : null)}
       {card(t('messagesIn'), MessageSquare, totals.incoming, previous ? previous.incoming : null)}
       {card(t('messagesOut'), Send, totals.outgoing, previous ? previous.outgoing : null)}
       {card(t('qualifiedLeads'), UserCheck, totals.qualifiedLeads, previous ? previous.qualifiedLeads : null)}

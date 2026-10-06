@@ -17,7 +17,6 @@ const labels: PeriodExportLabels = {
   dailySection: 'Detalle por día',
   date: 'Fecha',
   newContacts: 'Contactos nuevos',
-  newConversations: 'Conversaciones nuevas',
   messagesIn: 'Mensajes recibidos',
   messagesOut: 'Mensajes enviados (bot + equipo)',
   qualifiedLeads: 'Leads calificados',
@@ -63,11 +62,10 @@ describe('buildPeriodCsv', () => {
   it('writes period totals with a per-day average rounded to one decimal', () => {
     const lines = build().slice(1).split('\r\n')
     const start = lines.indexOf('"Total del período"')
-    expect(lines.slice(start, start + 7)).toEqual([
+    expect(lines.slice(start, start + 6)).toEqual([
       '"Total del período"',
       '"Métrica","Total","Promedio por día"',
       '"Contactos nuevos",15,5',
-      '"Conversaciones nuevas",12,4',
       '"Mensajes recibidos",120,40',
       '"Mensajes enviados (bot + equipo)",180,60',
       '"Leads calificados",9,3',
@@ -90,10 +88,10 @@ describe('buildPeriodCsv', () => {
     const start = lines.indexOf('"Detalle por día"')
     expect(lines.slice(start)).toEqual([
       '"Detalle por día"',
-      '"Fecha","Contactos nuevos","Conversaciones nuevas","Mensajes recibidos","Mensajes enviados (bot + equipo)","Leads calificados"',
-      '"2026-10-02",10,8,100,150,3',
-      '"2026-10-03",0,0,0,0,0',
-      '"2026-10-04",5,4,20,30,6',
+      '"Fecha","Contactos nuevos","Mensajes recibidos","Mensajes enviados (bot + equipo)","Leads calificados"',
+      '"2026-10-02",10,100,150,3',
+      '"2026-10-03",0,0,0,0',
+      '"2026-10-04",5,20,30,6',
     ])
   })
 
