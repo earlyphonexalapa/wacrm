@@ -11,6 +11,7 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { scheduleAiAutoReply } from '@/lib/ai/inbound-buffer'
 import { cancelFollowupsOnInbound } from '@/lib/followups/enroll'
+import { routeLead } from '@/lib/routing/assign'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   handleTemplateWebhookChange,
@@ -636,6 +637,24 @@ async function processMessage(
     })
   }
 
+  // Lead routing (migration 055): give a new lead — or a known contact who
+  // just came back through an ad — to a closer. Skipped for an old
+  // conversation with no owner and no ad referral, so existing chats aren't
+  // shuffled between closers. Never throws and does nothing unless the
+  // account switched routing on.
+  if (
+    !conversation.owner_agent_id &&
+    (convResult.created || message.referral?.source_id || message.referral?.ctwa_clid)
+  ) {
+    await routeLead({
+      db: supabaseAdmin(),
+      accountId,
+      conversationId: conversation.id,
+      contactId: contactRecord.id,
+      referral: message.referral,
+    })
+  }
+
   // Reactions short-circuit here — they aren't messages. We never insert
   // into `messages`, never bump unread_count, never update last_message_text.
   // Done before parseMessageContent so the media-URL fetch is skipped.
@@ -1154,11 +1173,19 @@ async function findOrCreateContact(
   )
 
   if (existingContact) {
-    // Update name if it changed
-    if (name && name !== existingContact.name) {
+    const update: Record<string, unknown> = {}
+    if (name && name !== existingContact.name) update.name = name
+    // A returning contact who tapped another ad: point them at the latest
+    // click, which is the one Meta can attribute a later sale to.
+    if (referral?.ctwa_clid && referral.ctwa_clid !== existingContact.ctwa_clid) {
+      update.ctwa_clid = referral.ctwa_clid
+      update.ctwa_ad_source_id = referral.source_id ?? null
+      update.ctwa_captured_at = new Date().toISOString()
+    }
+    if (Object.keys(update).length > 0) {
       await supabaseAdmin()
         .from('contacts')
-        .update({ name, updated_at: new Date().toISOString() })
+        .update({ ...update, updated_at: new Date().toISOString() })
         .eq('id', existingContact.id)
     }
     return { contact: existingContact, wasCreated: false }

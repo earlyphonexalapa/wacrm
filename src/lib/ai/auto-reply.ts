@@ -170,12 +170,24 @@ export async function dispatchInboundToAiReply(
       .limit(1)
     if (autoResponders && autoResponders.length > 0) return
 
-    const { data: conv, error: convErr } = await db
+    // owner_agent_id arrived with migration 055; retry without it so the
+    // bot keeps answering on an account that hasn't run it yet.
+    let { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, owner_agent_id')
       .eq('id', conversationId)
       .maybeSingle()
+    if (convErr) {
+      ;({ data: conv, error: convErr } = await db
+        .from('conversations')
+        .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+        .eq('id', conversationId)
+        .maybeSingle())
+    }
     if (convErr || !conv) return
+    // A lead owned by a closer hands off to THAT closer; the account-wide
+    // handoff agent is only the fallback for unowned chats.
+    const handoffAgentId: string | null = conv.owner_agent_id ?? config.handoffAgentId
     if (conv.assigned_agent_id) return // a human owns this thread
     if (conv.ai_autoreply_disabled) return // handed off / turned off here
     // Cheap early-out; the authoritative cap check is the atomic claim
@@ -202,7 +214,7 @@ export async function dispatchInboundToAiReply(
         accountId,
         conversationId,
         contactId,
-        handoffAgentId: config.handoffAgentId,
+        handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
         summary: buildHandoffSummary({
           messages,
@@ -274,7 +286,7 @@ export async function dispatchInboundToAiReply(
           accountId,
           conversationId,
           contactId,
-          handoffAgentId: config.handoffAgentId,
+          handoffAgentId,
           alreadyAssigned: Boolean(conv.assigned_agent_id),
           summary: buildHandoffSummary({
             messages,
@@ -295,7 +307,7 @@ export async function dispatchInboundToAiReply(
           accountId,
           conversationId,
           contactId,
-          handoffAgentId: config.handoffAgentId,
+          handoffAgentId,
           alreadyAssigned: Boolean(conv.assigned_agent_id),
           summary: buildHandoffSummary({
             messages,
@@ -330,7 +342,7 @@ export async function dispatchInboundToAiReply(
           accountId,
           conversationId,
           contactId,
-          handoffAgentId: config.handoffAgentId,
+          handoffAgentId,
           alreadyAssigned: Boolean(conv.assigned_agent_id),
           summary: buildHandoffSummary({
             messages,
@@ -413,7 +425,7 @@ export async function dispatchInboundToAiReply(
         accountId,
         conversationId,
         contactId,
-        handoffAgentId: config.handoffAgentId,
+        handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
         summary: buildHandoffSummary({ messages, replyCount: conv.ai_reply_count ?? 0 }),
       })
@@ -443,7 +455,7 @@ export async function dispatchInboundToAiReply(
         accountId,
         conversationId,
         contactId,
-        handoffAgentId: config.handoffAgentId,
+        handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
         summary: buildHandoffSummary({
           messages,
@@ -475,7 +487,7 @@ export async function dispatchInboundToAiReply(
         accountId,
         conversationId,
         contactId,
-        handoffAgentId: config.handoffAgentId,
+        handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
         summary: buildHandoffSummary({
           messages,

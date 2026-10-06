@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   scheduleAiAutoReply: vi.fn(),
   cancelFollowupsOnInbound: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
+  routeLead: vi.fn(),
   state: {
     // Result the message upsert's .select() resolves to. A genuine insert
     // returns the row; a replayed delivery conflicts and returns [].
@@ -14,8 +15,12 @@ const h = vi.hoisted(() => ({
     priorCustomerMsgCount: 0,
     /** Row `lookupInternalIdByMetaId` resolves for a `context.id`. */
     replyContextParent: null as { id: string } | null,
-    conversation: { id: 'conv-1', unread_count: 0, account_id: 'acc-1' },
+    conversation: { id: 'conv-1', unread_count: 0, account_id: 'acc-1' } as Record<string, unknown>,
+    /** false = the lookup finds nothing and the webhook creates the conversation. */
+    conversationExists: true,
     upsertCalls: [] as { row: Record<string, unknown>; options: unknown }[],
+    /** Patches written to an existing contact (name / latest ad click). */
+    contactUpdates: [] as Record<string, unknown>[],
     rpcCalls: [] as { name: string; args: Record<string, unknown> }[],
     afterCallbacks: [] as (() => Promise<void> | void)[],
     automationStarted: 0,
@@ -64,7 +69,8 @@ vi.mock('@supabase/supabase-js', () => ({
             }),
           }
         case 'conversations':
-          // findOrCreateConversation: select().eq().eq().order().limit()
+          // findOrCreateConversation: select().eq().eq().order().limit(),
+          // then insert().select().single() when nothing was found
           return {
             select: () => ({
               eq: () => ({
@@ -72,11 +78,16 @@ vi.mock('@supabase/supabase-js', () => ({
                   order: () => ({
                     limit: () =>
                       Promise.resolve({
-                        data: [h.state.conversation],
+                        data: h.state.conversationExists ? [h.state.conversation] : [],
                         error: null,
                       }),
                   }),
                 }),
+              }),
+            }),
+            insert: () => ({
+              select: () => ({
+                single: () => Promise.resolve({ data: h.state.conversation, error: null }),
               }),
             }),
           }
@@ -135,6 +146,13 @@ vi.mock('@supabase/supabase-js', () => ({
                     error: null,
                   }),
               }
+            },
+          }
+        case 'contacts':
+          return {
+            update: (patch: Record<string, unknown>) => {
+              h.state.contactUpdates.push(patch)
+              return { eq: () => Promise.resolve({ error: null }) }
             },
           }
         default:
@@ -205,6 +223,9 @@ vi.mock('@/lib/followups/enroll', () => ({
 vi.mock('@/lib/webhooks/deliver', () => ({
   dispatchWebhookEvent: h.dispatchWebhookEvent,
 }))
+vi.mock('@/lib/routing/assign', () => ({
+  routeLead: h.routeLead,
+}))
 
 import { POST } from './route'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
@@ -256,6 +277,8 @@ beforeEach(() => {
   h.state.priorCustomerMsgCount = 0
   h.state.replyContextParent = null
   h.state.conversation = { id: 'conv-1', unread_count: 0, account_id: 'acc-1' }
+  h.state.conversationExists = true
+  h.state.contactUpdates = []
   h.state.upsertCalls = []
   h.state.rpcCalls = []
   h.state.afterCallbacks = []
@@ -300,6 +323,58 @@ describe('inbound webhook: follow-up cancellation', () => {
     h.state.messageUpsertResult = []
     await runWebhook()
     expect(h.cancelFollowupsOnInbound).not.toHaveBeenCalled()
+  })
+})
+
+describe('inbound webhook: lead routing', () => {
+  it('routes the lead when its conversation was just created', async () => {
+    h.state.conversationExists = false
+    await runWebhook()
+    expect(h.routeLead).toHaveBeenCalledTimes(1)
+    expect(h.routeLead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'acc-1',
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+      }),
+    )
+  })
+
+  it('passes the ad referral along so the campaign can be resolved', async () => {
+    h.state.conversationExists = false
+    const referral = { source_id: 'ad-1', source_type: 'ad', ctwa_clid: 'clid-1' }
+    await runWebhook({ ...TEXT_MESSAGE, referral })
+    expect(h.routeLead).toHaveBeenCalledWith(expect.objectContaining({ referral }))
+  })
+
+  it('leaves an old conversation with no owner and no ad referral alone', async () => {
+    await runWebhook()
+    expect(h.routeLead).not.toHaveBeenCalled()
+  })
+
+  it('routes an old conversation with no owner when the contact came back through an ad', async () => {
+    await runWebhook({ ...TEXT_MESSAGE, referral: { source_id: 'ad-2', ctwa_clid: 'clid-2' } })
+    expect(h.routeLead).toHaveBeenCalledTimes(1)
+  })
+
+  it('never reassigns a conversation that already has an owner', async () => {
+    h.state.conversation = { ...h.state.conversation, owner_agent_id: 'closer-1' }
+    await runWebhook({ ...TEXT_MESSAGE, referral: { source_id: 'ad-2', ctwa_clid: 'clid-2' } })
+    expect(h.routeLead).not.toHaveBeenCalled()
+  })
+})
+
+describe('inbound webhook: returning contact clicks another ad', () => {
+  it('points the contact at the latest ad click', async () => {
+    await runWebhook({ ...TEXT_MESSAGE, referral: { source_id: 'ad-9', ctwa_clid: 'clid-9' } })
+    expect(h.state.contactUpdates).toEqual([
+      expect.objectContaining({ ctwa_clid: 'clid-9', ctwa_ad_source_id: 'ad-9' }),
+    ])
+  })
+
+  it('writes nothing to the contact when the message carries no referral', async () => {
+    await runWebhook()
+    expect(h.state.contactUpdates).toEqual([])
   })
 })
 

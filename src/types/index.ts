@@ -163,6 +163,20 @@ export interface Conversation {
   contact_id: string;
   status: ConversationStatus;
   assigned_agent_id?: string;
+  /**
+   * The closer this lead belongs to (migration 055). Separate from
+   * `assigned_agent_id`: owning a lead does NOT silence the AI bot — only a
+   * human taking the thread (assigned_agent_id) does.
+   */
+  owner_agent_id?: string | null;
+  /** How the owner was picked: campaign rule, organic pool, or by hand. */
+  owner_source?:
+    | 'campaign'
+    | 'unmatched_campaign'
+    | 'unresolved'
+    | 'organic'
+    | 'manual'
+    | null;
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;

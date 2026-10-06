@@ -385,6 +385,24 @@ describe('dispatchInboundToAiReply — handoff', () => {
     })
   })
 
+  it('hands a lead off to the closer who owns it, not the account-wide handoff agent', async () => {
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'agent-7' }))
+    h.state.conv = { ...h.state.conv, owner_agent_id: 'closer-pedro' }
+    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toMatchObject({
+      ai_autoreply_disabled: true,
+      assigned_agent_id: 'closer-pedro',
+    })
+    expect(h.notifyHandoffNeedsHuman).not.toHaveBeenCalled()
+  })
+
+  it('still lets the bot answer a lead that has an owner but no human on the thread', async () => {
+    h.state.conv = { ...h.state.conv, owner_agent_id: 'closer-pedro' }
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalled()
+  })
+
   it('alerts every admin when no handoff agent is configured', async () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
     await dispatchInboundToAiReply(ARGS)
