@@ -58,7 +58,7 @@ export function ConversationList({
   resyncToken = 0,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
-  const { user } = useAuth();
+  const { user, canManageMembers: seesOwnerBadge } = useAuth();
   const userId = user?.id ?? null;
   const { restricted } = useCloserIsolation();
 
@@ -78,10 +78,12 @@ export function ConversationList({
     { label: t("filterClosed"), value: "closed" },
   ], [t, hasOwners]);
 
-  // Who owns what, for the badge on each row. Only the owner's name is
-  // needed, so this stays a tiny one-off fetch.
+  // Who owns what, for the badge on each row. Only admins and the owner see
+  // the badge, so closers skip this fetch. Only the owner's name is needed,
+  // so it stays a tiny one-off fetch.
   const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
   useEffect(() => {
+    if (!seesOwnerBadge) return;
     let cancelled = false;
     createClient()
       .from("profiles")
@@ -97,7 +99,7 @@ export function ConversationList({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [seesOwnerBadge]);
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
@@ -503,7 +505,11 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
-                ownerName={conv.owner_agent_id ? (ownerNames[conv.owner_agent_id] ?? "") : null}
+                ownerName={
+                  seesOwnerBadge && conv.owner_agent_id
+                    ? (ownerNames[conv.owner_agent_id] ?? "")
+                    : null
+                }
                 t={t}
               />
             ))}
