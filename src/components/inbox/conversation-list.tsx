@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CONVERSATION_SELECT,
+  loadAlwaysLoadedConversations,
   matchesContactFilters,
+  mergeConversations,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
@@ -96,10 +98,20 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select(CONVERSATION_SELECT)
-        .order("last_message_at", { ascending: false });
+      // The plain select is capped at 1,000 rows (the most recent chats), so
+      // chats tagged "Pagado" are fetched alongside it and merged in — they
+      // stay in the Inbox however old they get. If that extra fetch fails
+      // the Inbox still loads with the recent window.
+      const [{ data, error }, alwaysLoaded] = await Promise.all([
+        supabase
+          .from("conversations")
+          .select(CONVERSATION_SELECT)
+          .order("last_message_at", { ascending: false }),
+        loadAlwaysLoadedConversations(supabase).catch((err) => {
+          console.warn("Failed to load pinned conversations:", err);
+          return [] as Conversation[];
+        }),
+      ]);
 
       if (cancelled) return;
 
@@ -115,7 +127,9 @@ export function ConversationList({
         return;
       }
 
-      onConversationsLoadedRef.current(normalizeConversations(data ?? []));
+      onConversationsLoadedRef.current(
+        mergeConversations(normalizeConversations(data ?? []), alwaysLoaded),
+      );
       setLoading(false);
     })();
 

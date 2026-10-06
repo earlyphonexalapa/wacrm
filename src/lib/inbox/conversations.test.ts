@@ -143,3 +143,163 @@ describe("normalizeConversation", () => {
     expect(normalizeConversation(raw).contact).toBeNull();
   });
 });
+
+// ---- always-loaded ("Pagado") conversations --------------------------
+
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  isAlwaysLoadedTag,
+  loadAlwaysLoadedConversations,
+  mergeConversations,
+} from "./conversations";
+
+describe("isAlwaysLoadedTag", () => {
+  it("matches Pagado ignoring case and surrounding spaces", () => {
+    expect(isAlwaysLoadedTag("Pagado")).toBe(true);
+    expect(isAlwaysLoadedTag("  pagado ")).toBe(true);
+    expect(isAlwaysLoadedTag("PAGADO")).toBe(true);
+  });
+
+  it("rejects other tags and empty values", () => {
+    expect(isAlwaysLoadedTag("Pagado parcial")).toBe(false);
+    expect(isAlwaysLoadedTag("Lead Calificado")).toBe(false);
+    expect(isAlwaysLoadedTag(null)).toBe(false);
+    expect(isAlwaysLoadedTag(undefined)).toBe(false);
+  });
+});
+
+describe("mergeConversations", () => {
+  const conv = (id: string, last: string | undefined, text = "x"): Conversation => ({
+    ...makeConversation({ id: `ct-${id}` }),
+    id,
+    last_message_at: last,
+    last_message_text: text,
+  });
+
+  it("unions both lists without duplicates and prefers the recent copy", () => {
+    const recent = [conv("a", "2026-10-05T10:00:00Z", "fresh")];
+    const extra = [conv("a", "2026-10-01T10:00:00Z", "stale"), conv("b", "2026-09-01T10:00:00Z")];
+
+    const merged = mergeConversations(recent, extra);
+
+    expect(merged.map((c) => c.id)).toEqual(["a", "b"]);
+    expect(merged[0].last_message_text).toBe("fresh");
+  });
+
+  it("orders by latest activity, newest first, missing dates last", () => {
+    const merged = mergeConversations(
+      [conv("old", "2026-09-01T00:00:00Z"), conv("none", undefined)],
+      [conv("new", "2026-10-05T00:00:00Z")],
+    );
+    expect(merged.map((c) => c.id)).toEqual(["new", "old", "none"]);
+  });
+});
+
+describe("loadAlwaysLoadedConversations", () => {
+  type Row = Record<string, unknown>;
+
+  function fakeDb(opts: {
+    tags: Row[];
+    contactTags: Row[];
+    conversations: Row[];
+  }) {
+    const calls = { contactTagPages: 0, conversationRequests: 0 };
+    const db = {
+      from(table: string) {
+        if (table === "tags") {
+          return { select: async () => ({ data: opts.tags, error: null }) };
+        }
+        if (table === "contact_tags") {
+          const q = {
+            select: () => q,
+            in: () => q,
+            order: () => q,
+            range: async (a: number, b: number) => {
+              calls.contactTagPages++;
+              return { data: opts.contactTags.slice(a, b + 1), error: null };
+            },
+          };
+          return q;
+        }
+        const q = {
+          select: () => q,
+          in: async (_col: string, ids: string[]) => {
+            calls.conversationRequests++;
+            return {
+              data: opts.conversations.filter((c) => ids.includes(c.contact_id as string)),
+              error: null,
+            };
+          },
+        };
+        return q;
+      },
+    } as unknown as SupabaseClient;
+    return { db, calls };
+  }
+
+  const convRow = (id: string, contactId: string) => ({
+    id,
+    contact_id: contactId,
+    status: "open",
+    contact: { id: contactId, contact_tags: [{ tags: tag("t-paid", "Pagado") }] },
+  });
+
+  it("returns nothing without querying contacts when no Pagado tag exists", async () => {
+    const { db, calls } = fakeDb({
+      tags: [{ id: "t1", name: "Lead Calificado" }],
+      contactTags: [],
+      conversations: [],
+    });
+
+    await expect(loadAlwaysLoadedConversations(db)).resolves.toEqual([]);
+    expect(calls.contactTagPages).toBe(0);
+    expect(calls.conversationRequests).toBe(0);
+  });
+
+  it("loads the conversations of contacts tagged Pagado and flattens their tags", async () => {
+    const { db } = fakeDb({
+      tags: [
+        { id: "t-paid", name: " pagado " },
+        { id: "t-other", name: "Otro" },
+      ],
+      contactTags: [{ contact_id: "c1" }, { contact_id: "c2" }],
+      conversations: [convRow("v1", "c1"), convRow("v2", "c2"), convRow("v3", "c-untagged")],
+    });
+
+    const result = await loadAlwaysLoadedConversations(db);
+
+    expect(result.map((c) => c.id).sort()).toEqual(["v1", "v2"]);
+    expect(result[0].contact?.tags?.[0].name).toBe("Pagado");
+  });
+
+  it("walks past PostgREST's 1,000-row cap and chunks the conversation lookups", async () => {
+    const total = 2500;
+    const contactTags = Array.from({ length: total }, (_, i) => ({ contact_id: `c${i}` }));
+    const conversations = Array.from({ length: total }, (_, i) => convRow(`v${i}`, `c${i}`));
+    const { db, calls } = fakeDb({
+      tags: [{ id: "t-paid", name: "Pagado" }],
+      contactTags,
+      conversations,
+    });
+
+    const result = await loadAlwaysLoadedConversations(db);
+
+    expect(result).toHaveLength(total);
+    expect(calls.contactTagPages).toBe(3);
+    expect(calls.conversationRequests).toBe(Math.ceil(total / 80));
+  });
+
+  it("de-duplicates contacts that carry the tag twice (two Pagado tags)", async () => {
+    const { db } = fakeDb({
+      tags: [
+        { id: "t1", name: "Pagado" },
+        { id: "t2", name: "PAGADO" },
+      ],
+      contactTags: [{ contact_id: "c1" }, { contact_id: "c1" }],
+      conversations: [convRow("v1", "c1")],
+    });
+
+    const result = await loadAlwaysLoadedConversations(db);
+    expect(result).toHaveLength(1);
+  });
+});
