@@ -91,6 +91,10 @@ export default async function RootLayout({
       data-theme={DEFAULT_THEME}
       data-mode={DEFAULT_MODE}
       className={`${inter.variable} h-full antialiased`}
+      // The app is already translated (next-intl). Chrome's own "translate
+      // this page" rewrites text nodes React manages, and the next update then
+      // crashes with "removeChild ... is not a child of this node".
+      translate="no"
       // The `theme-boot` script below rewrites `data-theme` and
       // `data-mode` on <html> from localStorage before React hydrates,
       // so for any non-default choice the client DOM intentionally
@@ -101,6 +105,7 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <meta name="google" content="notranslate" />
         <Script
           id="theme-boot"
           strategy="beforeInteractive"
