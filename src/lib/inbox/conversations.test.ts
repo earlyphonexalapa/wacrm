@@ -151,6 +151,7 @@ import {
   isAlwaysLoadedTag,
   loadAlwaysLoadedConversations,
   mergeConversations,
+  timedTagDays,
 } from "./conversations";
 
 describe("isAlwaysLoadedTag", () => {
@@ -165,6 +166,20 @@ describe("isAlwaysLoadedTag", () => {
     expect(isAlwaysLoadedTag("Lead Calificado")).toBe(false);
     expect(isAlwaysLoadedTag(null)).toBe(false);
     expect(isAlwaysLoadedTag(undefined)).toBe(false);
+  });
+});
+
+describe("timedTagDays", () => {
+  it("gives Lead Calificado and Abono 14 days, ignoring case and spaces", () => {
+    expect(timedTagDays("Lead Calificado")).toBe(14);
+    expect(timedTagDays("  abono ")).toBe(14);
+    expect(timedTagDays("ABONO")).toBe(14);
+  });
+
+  it("has no window for Pagado (it is permanent) or other tags", () => {
+    expect(timedTagDays("Pagado")).toBeUndefined();
+    expect(timedTagDays("Abono parcial")).toBeUndefined();
+    expect(timedTagDays(null)).toBeUndefined();
   });
 });
 
@@ -210,13 +225,27 @@ describe("loadAlwaysLoadedConversations", () => {
           return { select: async () => ({ data: opts.tags, error: null }) };
         }
         if (table === "contact_tags") {
+          let tagIds: string[] | null = null;
+          let since: string | null = null;
           const q = {
             select: () => q,
-            in: () => q,
+            in: (_col: string, ids: string[]) => {
+              tagIds = ids;
+              return q;
+            },
+            gte: (_col: string, value: string) => {
+              since = value;
+              return q;
+            },
             order: () => q,
             range: async (a: number, b: number) => {
               calls.contactTagPages++;
-              return { data: opts.contactTags.slice(a, b + 1), error: null };
+              const rows = opts.contactTags.filter(
+                (r) =>
+                  (r.tag_id === undefined || tagIds === null || tagIds.includes(r.tag_id as string)) &&
+                  (r.created_at === undefined || since === null || (r.created_at as string) >= since),
+              );
+              return { data: rows.slice(a, b + 1), error: null };
             },
           };
           return q;
@@ -244,9 +273,9 @@ describe("loadAlwaysLoadedConversations", () => {
     contact: { id: contactId, contact_tags: [{ tags: tag("t-paid", "Pagado") }] },
   });
 
-  it("returns nothing without querying contacts when no Pagado tag exists", async () => {
+  it("returns nothing without querying contacts when no kept tag exists", async () => {
     const { db, calls } = fakeDb({
-      tags: [{ id: "t1", name: "Lead Calificado" }],
+      tags: [{ id: "t1", name: "Otro" }],
       contactTags: [],
       conversations: [],
     });
@@ -287,6 +316,55 @@ describe("loadAlwaysLoadedConversations", () => {
     expect(result).toHaveLength(total);
     expect(calls.contactTagPages).toBe(3);
     expect(calls.conversationRequests).toBe(Math.ceil(total / 80));
+  });
+
+  describe("Lead Calificado and Abono (kept 14 days after tagging)", () => {
+    const NOW = Date.parse("2026-10-20T12:00:00Z");
+    const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString();
+
+    it("keeps recently tagged chats, drops old ones, and keeps Pagado forever", async () => {
+      const { db } = fakeDb({
+        tags: [
+          { id: "t-paid", name: "Pagado" },
+          { id: "t-lead", name: "Lead Calificado" },
+          { id: "t-abono", name: " ABONO " },
+        ],
+        contactTags: [
+          { tag_id: "t-paid", contact_id: "paid-old", created_at: daysAgo(90) },
+          { tag_id: "t-lead", contact_id: "lead-new", created_at: daysAgo(3) },
+          { tag_id: "t-lead", contact_id: "lead-old", created_at: daysAgo(20) },
+          { tag_id: "t-abono", contact_id: "abono-new", created_at: daysAgo(13) },
+          { tag_id: "t-abono", contact_id: "abono-old", created_at: daysAgo(15) },
+        ],
+        conversations: [
+          convRow("v-paid", "paid-old"),
+          convRow("v-lead-new", "lead-new"),
+          convRow("v-lead-old", "lead-old"),
+          convRow("v-abono-new", "abono-new"),
+          convRow("v-abono-old", "abono-old"),
+        ],
+      });
+
+      const result = await loadAlwaysLoadedConversations(db, NOW);
+
+      expect(result.map((c) => c.id).sort()).toEqual(["v-abono-new", "v-lead-new", "v-paid"]);
+    });
+
+    it("does not duplicate a contact that is both Pagado and recently Lead Calificado", async () => {
+      const { db } = fakeDb({
+        tags: [
+          { id: "t-paid", name: "Pagado" },
+          { id: "t-lead", name: "Lead Calificado" },
+        ],
+        contactTags: [
+          { tag_id: "t-paid", contact_id: "c1", created_at: daysAgo(1) },
+          { tag_id: "t-lead", contact_id: "c1", created_at: daysAgo(2) },
+        ],
+        conversations: [convRow("v1", "c1")],
+      });
+
+      expect(await loadAlwaysLoadedConversations(db, NOW)).toHaveLength(1);
+    });
   });
 
   it("de-duplicates contacts that carry the tag twice (two Pagado tags)", async () => {

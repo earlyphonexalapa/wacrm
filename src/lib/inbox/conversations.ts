@@ -78,50 +78,92 @@ export function matchesContactFilters(
 // receives the 1,000 most recently active conversations — on a busy
 // account that is roughly the last week, and older chats silently drop
 // out of the list (they are still in the database). Chats whose contact
-// carries the "Pagado" tag are the ones worth keeping reachable
-// forever, so they are fetched separately and merged into the list.
+// carries one of the tags below are the ones worth keeping reachable, so
+// they are fetched separately and merged into the list:
+//   - "Pagado" stays forever;
+//   - "Lead Calificado" and "Abono" stay for 14 days from the moment the tag
+//     was put on the contact.
 // ============================================================
 
 const ALWAYS_LOADED_TAG = "pagado";
+/** Tags kept for a limited time, and for how many days after tagging. */
+const TIMED_TAG_DAYS: Record<string, number> = {
+  "lead calificado": 14,
+  abono: 14,
+};
 
 /** Page size for the contact_tags walk — equal to PostgREST's row cap. */
 const TAG_PAGE_SIZE = 1000;
 /** Contact ids per conversations request, to keep the URL short. */
 const CONTACT_CHUNK = 80;
 
+const tagKey = (name: string | null | undefined) => (name ?? "").trim().toLowerCase();
+
 export function isAlwaysLoadedTag(name: string | null | undefined): boolean {
-  return (name ?? "").trim().toLowerCase() === ALWAYS_LOADED_TAG;
+  return tagKey(name) === ALWAYS_LOADED_TAG;
+}
+
+/** Days a tag keeps its chats in the Inbox after being applied; undefined if it doesn't. */
+export function timedTagDays(name: string | null | undefined): number | undefined {
+  return TIMED_TAG_DAYS[tagKey(name)];
+}
+
+/** Contact ids carrying any of `tagIds`, optionally only tagged since `since`. */
+async function contactsWithTags(
+  db: SupabaseClient,
+  tagIds: string[],
+  since?: string,
+): Promise<string[]> {
+  const ids: string[] = [];
+  for (let from = 0; ; from += TAG_PAGE_SIZE) {
+    let query = db.from("contact_tags").select("contact_id").in("tag_id", tagIds);
+    if (since) query = query.gte("created_at", since);
+    const { data, error } = await query
+      .order("id")
+      .range(from, from + TAG_PAGE_SIZE - 1);
+    if (error) throw error;
+    for (const row of data ?? []) ids.push(row.contact_id as string);
+    if (!data || data.length < TAG_PAGE_SIZE) break;
+  }
+  return ids;
 }
 
 /**
- * Every conversation whose contact has the "Pagado" tag, however old.
+ * Every conversation that must stay reachable: the contact has "Pagado"
+ * (however old), or "Lead Calificado" / "Abono" within their keep window.
  * Throws on a failed query; callers decide whether the Inbox can carry on
  * without it.
  */
 export async function loadAlwaysLoadedConversations(
   db: SupabaseClient,
+  now: number = Date.now(),
 ): Promise<Conversation[]> {
   const { data: tags, error: tagsError } = await db
     .from("tags")
     .select("id, name");
   if (tagsError) throw tagsError;
 
-  const tagIds = (tags ?? [])
-    .filter((t) => isAlwaysLoadedTag(t.name))
-    .map((t) => t.id as string);
-  if (tagIds.length === 0) return [];
+  const foreverIds: string[] = [];
+  const timedIds = new Map<number, string[]>(); // days -> tag ids
+  for (const t of tags ?? []) {
+    if (isAlwaysLoadedTag(t.name)) {
+      foreverIds.push(t.id as string);
+      continue;
+    }
+    const days = timedTagDays(t.name);
+    if (days !== undefined) {
+      timedIds.set(days, [...(timedIds.get(days) ?? []), t.id as string]);
+    }
+  }
+  if (foreverIds.length === 0 && timedIds.size === 0) return [];
 
   const contactIds = new Set<string>();
-  for (let from = 0; ; from += TAG_PAGE_SIZE) {
-    const { data, error } = await db
-      .from("contact_tags")
-      .select("contact_id")
-      .in("tag_id", tagIds)
-      .order("id")
-      .range(from, from + TAG_PAGE_SIZE - 1);
-    if (error) throw error;
-    for (const row of data ?? []) contactIds.add(row.contact_id as string);
-    if (!data || data.length < TAG_PAGE_SIZE) break;
+  if (foreverIds.length > 0) {
+    for (const id of await contactsWithTags(db, foreverIds)) contactIds.add(id);
+  }
+  for (const [days, ids] of timedIds) {
+    const since = new Date(now - days * 86_400_000).toISOString();
+    for (const id of await contactsWithTags(db, ids, since)) contactIds.add(id);
   }
 
   const ids = [...contactIds];
