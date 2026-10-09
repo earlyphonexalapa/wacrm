@@ -2259,5 +2259,11 @@
     "disableDesc": "Escribe un código actual de tu app para desactivarla.",
     "enabledToast": "Verificación en dos pasos activada.",
     "disabledToast": "Verificación en dos pasos desactivada."
+  },
+  "ErrorBoundary": {
+    "title": "Esta página tuvo un problema",
+    "description": "Pulsa Reintentar. Si se repite, envía una captura de este mensaje.",
+    "retry": "Reintentar",
+    "reload": "Recargar la página"
   }
 }

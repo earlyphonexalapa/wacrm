@@ -2259,5 +2259,11 @@
     "disableDesc": "Type a current code from your app to turn it off.",
     "enabledToast": "Two-step verification turned on.",
     "disabledToast": "Two-step verification turned off."
+  },
+  "ErrorBoundary": {
+    "title": "Something went wrong on this page",
+    "description": "Press Retry. If it keeps happening, send a screenshot of this message.",
+    "retry": "Retry",
+    "reload": "Reload the page"
   }
 }

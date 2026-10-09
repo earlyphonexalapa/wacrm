@@ -2259,5 +2259,11 @@
     "disableDesc": "끄려면 앱의 현재 코드를 입력하세요.",
     "enabledToast": "2단계 인증이 켜졌습니다.",
     "disabledToast": "2단계 인증이 꺼졌습니다."
+  },
+  "ErrorBoundary": {
+    "title": "이 페이지에 문제가 발생했습니다",
+    "description": "다시 시도를 누르세요. 계속되면 이 메시지의 스크린샷을 보내 주세요.",
+    "retry": "다시 시도",
+    "reload": "페이지 새로고침"
   }
 }
