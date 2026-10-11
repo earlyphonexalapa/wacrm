@@ -382,6 +382,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const supabase = createClient();
+    // Stop phone notifications for this user on this device — otherwise a
+    // signed-out phone keeps showing their customers' messages.
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      const sub = await reg?.pushManager?.getSubscription();
+      if (sub) {
+        await fetch("/api/push", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+    } catch {
+      // Best-effort; never block signing out.
+    }
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);

@@ -233,7 +233,8 @@
       "unknown": "알 수 없음",
       "filterNeedsHuman": "주의 필요",
       "filterMine": "내 리드",
-      "ownerTitle": "클로저: {name}"
+      "ownerTitle": "클로저: {name}",
+      "yesterday": "어제"
     },
     "messageThread": {
       "backToConversations": "대화 목록으로 돌아가기",
@@ -2265,5 +2266,32 @@
     "description": "다시 시도를 누르세요. 계속되면 이 메시지의 스크린샷을 보내 주세요.",
     "retry": "다시 시도",
     "reload": "페이지 새로고침"
+  },
+  "Mobile": {
+    "chats": "Chats",
+    "more": "More",
+    "searchChats": "Search",
+    "installTitle": "Install wacrm on your iPhone",
+    "installBody": "Tap <share></share> Share, then “Add to Home Screen”. It opens like an app — full screen, with notifications.",
+    "installNotSafari": "Open this page in Safari to install it on your iPhone.",
+    "dismiss": "Close",
+    "pushTitle": "Turn on notifications",
+    "pushBody": "Get a ping on your phone when a customer writes, even with the app closed.",
+    "pushEnable": "Turn on",
+    "pushLater": "Not now",
+    "pushEnabled": "Notifications are on for this device",
+    "pushDenied": "Notifications are blocked. Turn them on in Settings › Notifications › wacrm.",
+    "pushUnavailable": "Notifications aren’t configured on the server.",
+    "pushFailed": "Couldn’t turn on notifications.",
+    "settingsTitle": "Phone app",
+    "settingsDesc": "Install wacrm on your iPhone or Android as an app and get notified about new messages.",
+    "settingsInstalled": "You’re using the installed app.",
+    "settingsNotInstalled": "On iPhone: open wacrm in Safari, tap Share › “Add to Home Screen”, then open the app from its icon.",
+    "settingsPushOn": "Notifications are on for this device",
+    "settingsPushOff": "Notifications are off for this device",
+    "settingsPushNeedsInstall": "On iPhone, notifications only work from the installed app (iOS 16.4 or later).",
+    "pushDisable": "Turn off",
+    "pushTest": "Send test",
+    "pushTestSent": "Test notification sent"
   }
 }

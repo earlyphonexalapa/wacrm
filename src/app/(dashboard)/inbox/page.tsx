@@ -15,6 +15,8 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { OPEN_CONVERSATION_EVENT } from "@/components/pwa/pwa-provider";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -594,8 +596,53 @@ function InboxPageInner() {
   // before, unchanged.
   const hasActiveConv = !!activeConversation;
 
+  // Phones show an open chat full screen, like WhatsApp: the shell hides
+  // its bottom tabs while <html data-chat-open> is set.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (hasActiveConv) root.dataset.chatOpen = "";
+    else delete root.dataset.chatOpen;
+    return () => {
+      delete root.dataset.chatOpen;
+    };
+  }, [hasActiveConv]);
+
+  // Phone-only contact info sheet (tags / deals / notes), opened by tapping
+  // the contact's name in the thread header.
+  const [contactSheetOpen, setContactSheetOpen] = useState(false);
+  const handleOpenContact = useCallback(() => setContactSheetOpen(true), []);
+
+  // A push notification tapped while the app is already open asks for a
+  // chat through this event (see PwaProvider) instead of reloading the page.
+  useEffect(() => {
+    const onOpen = async (e: Event) => {
+      const id = (e as CustomEvent<{ conversationId?: string }>).detail?.conversationId;
+      if (!id) return;
+      const known = conversations.find((c) => c.id === id);
+      if (known) {
+        handleSelectConversation(known);
+        return;
+      }
+      const { data } = await createClient()
+        .from("conversations")
+        .select(CONVERSATION_SELECT)
+        .eq("id", id)
+        .maybeSingle();
+      if (!data) return;
+      const fetched = normalizeConversation(data);
+      setConversations((prev) =>
+        prev.some((c) => c.id === fetched.id) ? prev : [fetched, ...prev],
+      );
+      handleSelectConversation(fetched);
+    };
+    window.addEventListener(OPEN_CONVERSATION_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_CONVERSATION_EVENT, onOpen);
+  }, [conversations, handleSelectConversation]);
+
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
+    // Phones: fills the shell's main area (no header above it). lg+: the
+    // original full-bleed layout under the 3.5rem header.
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:-m-6 lg:h-[calc(100vh-3.5rem)] lg:flex-none">
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (
@@ -656,6 +703,7 @@ function InboxPageInner() {
             }
             onOwnerChange={handleOwnerChange}
             onBack={handleCloseConversation}
+            onOpenContact={handleOpenContact}
             resyncToken={resyncToken}
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
@@ -673,6 +721,18 @@ function InboxPageInner() {
           </div>
         )}
       </div>
+
+      <Sheet open={contactSheetOpen && hasActiveConv} onOpenChange={setContactSheetOpen}>
+        <SheetContent
+          side="right"
+          className="w-full gap-0 p-0 pt-[env(safe-area-inset-top)] data-[side=right]:w-full lg:hidden"
+        >
+          <SheetTitle className="sr-only">
+            {activeContact?.name || activeContact?.phone || ""}
+          </SheetTitle>
+          <ContactSidebar contact={activeContact} className="w-full border-l-0" />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

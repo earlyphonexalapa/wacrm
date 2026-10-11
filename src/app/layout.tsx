@@ -32,6 +32,14 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [{ url: "/icon" }],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  // Installed from Safari's "Add to Home Screen", the app opens full
+  // screen with its own icon and name — see docs/ios-app.md.
+  appleWebApp: {
+    capable: true,
+    title: "wacrm",
+    statusBarStyle: "black-translucent",
   },
   formatDetection: {
     email: false,
@@ -43,6 +51,14 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#020617",
   colorScheme: "dark light",
+  // Lets the installed app draw under the iPhone notch / home indicator;
+  // the shell pads itself with env(safe-area-inset-*).
+  viewportFit: "cover",
+  width: "device-width",
+  initialScale: 1,
+  // iOS zooms the page when focusing an input under 16px and never zooms
+  // back — in a chat app that's every message typed. Pinch-zoom stays on.
+  maximumScale: 1,
 };
 
 // Inline boot script — runs before React hydrates so the user's

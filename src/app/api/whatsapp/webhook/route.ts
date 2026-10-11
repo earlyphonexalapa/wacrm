@@ -13,6 +13,7 @@ import { scheduleAiAutoReply } from '@/lib/ai/inbound-buffer'
 import { cancelFollowupsOnInbound } from '@/lib/followups/enroll'
 import { routeLead } from '@/lib/routing/assign'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { notifyInboundMessage } from '@/lib/push/send'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -803,6 +804,16 @@ async function processMessage(
   // SQL — see the helper for why that matters.
   await reopenClosedConversation(supabaseAdmin(), conversation)
 
+  // Phone notification for the installable app (docs/ios-app.md). Runs
+  // after lead routing so a brand-new lead buzzes the closer it was just
+  // handed to. A no-op unless VAPID keys are set; never throws.
+  await notifyInboundMessage({
+    accountId,
+    conversationId: conversation.id,
+    contactName: contactRecord.name || senderPhone,
+    text: contentText || pushPreviewForType(message.type),
+  })
+
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
@@ -935,6 +946,20 @@ async function processMessage(
     content_type: contentType,
     text: contentText,
   })
+}
+
+// What the lock-screen notification says for a message with no text.
+function pushPreviewForType(type: string): string {
+  switch (type) {
+    case 'image': return '📷 Foto'
+    case 'sticker': return '🌟 Sticker'
+    case 'video': return '🎥 Video'
+    case 'audio': return '🎤 Audio'
+    case 'document': return '📄 Documento'
+    case 'location': return '📍 Ubicación'
+    case 'contacts': return '👤 Contacto'
+    default: return 'Nuevo mensaje'
+  }
 }
 
 async function parseMessageContent(

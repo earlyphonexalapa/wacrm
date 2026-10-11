@@ -191,6 +191,7 @@ export function MessageComposer({
   const readOnly = !canSend;
   // Media (like free-form text) is only allowed inside the 24h window.
   const inputsDisabled = readOnly || sessionExpired;
+  const showMic = !text.trim() && !inputsDisabled;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -238,7 +239,10 @@ export function MessageComposer({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      // On a phone keyboard Return is a new line and the send button sends,
+      // the way WhatsApp behaves; Enter-to-send is a desktop habit.
+      const touchKeyboard = window.matchMedia("(pointer: coarse)").matches;
+      if (e.key === "Enter" && !e.shiftKey && !touchKeyboard) {
         e.preventDefault();
         handleSend();
       }
@@ -536,7 +540,9 @@ export function MessageComposer({
   // ---- Render --------------------------------------------------------
 
   return (
-    <div className="border-t border-border bg-card p-3">
+    // Bottom padding clears the iPhone home indicator when the thread is
+    // full screen in the installed app (env() is 0 everywhere else).
+    <div className="border-t border-border bg-card p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:p-3">
       {replyTo && (
         <div className="mb-2">
           <ReplyQuote
@@ -641,7 +647,7 @@ export function MessageComposer({
                     ? undefined
                     : t("attachMedia")
               }
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 lg:h-9 lg:w-9 lg:rounded-md"
             >
               {busy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -681,7 +687,7 @@ export function MessageComposer({
                     ? undefined
                     : t("moreActions")
               }
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 lg:h-9 lg:w-9 lg:rounded-md"
             >
               <Plus className="h-4 w-4" />
             </DropdownMenuTrigger>
@@ -694,9 +700,28 @@ export function MessageComposer({
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
               </DropdownMenuItem>
+              {/* On a phone the templates + AI buttons live in this menu
+                  instead of the row, so the text box keeps its width. */}
+              <DropdownMenuItem
+                className="lg:hidden"
+                disabled={readOnly}
+                onClick={onOpenTemplates}
+              >
+                <LayoutTemplate className="mr-2 h-4 w-4" />
+                {t("templates")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="lg:hidden"
+                disabled={readOnly || drafting}
+                onClick={() => void handleDraft()}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                {t("draftWithAI")}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
+          <div className="hidden lg:contents">
           <GatedButton
             variant="ghost"
             size="sm"
@@ -725,6 +750,7 @@ export function MessageComposer({
               <Sparkles className="h-4 w-4" />
             )}
           </GatedButton>
+          </div>
 
           <textarea
             ref={textareaRef}
@@ -745,21 +771,37 @@ export function MessageComposer({
             // The placeholder text also surfaces the read-only state.
             title={readOnly ? t("readOnlyTitle") : undefined}
             className={cn(
-              "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
+              // 16px text on phones: iOS zooms into anything smaller on focus.
+              "min-w-0 flex-1 resize-none rounded-3xl border border-border bg-muted px-4 py-2 text-base text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 lg:rounded-xl lg:py-2.5 lg:text-sm",
               (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
             )}
           />
 
+          {/* WhatsApp on a phone: an empty box shows the mic, typing swaps
+              it for send. Desktop keeps the send button (mic is in 📎). */}
+          {showMic && (
+            <button
+              type="button"
+              onClick={() => void startRecording()}
+              disabled={busy}
+              aria-label={t("voiceNote")}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-50 lg:hidden"
+            >
+              <Mic className="h-5 w-5" />
+            </button>
+          )}
+          <div className={cn("contents", showMic && "max-lg:hidden")}>
           <GatedButton
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
             disabled={!text.trim() || sessionExpired || sending}
             onClick={handleSend}
-            className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+            className="h-10 w-10 shrink-0 rounded-full bg-primary p-0 hover:bg-primary/90 disabled:opacity-40 lg:h-9 lg:w-9 lg:rounded-md"
           >
             <Send className="h-4 w-4" />
           </GatedButton>
+          </div>
         </div>
       )}
 
@@ -767,7 +809,7 @@ export function MessageComposer({
           `items-end` buttons below the textarea. Indented to line up
           under the textarea left edge. */}
       {!draft && !recording && (
-        <p className="mt-1 pl-[5.5rem] text-[10px] text-muted-foreground">
+        <p className="mt-1 hidden pl-[5.5rem] text-[10px] text-muted-foreground lg:block">
           {t("draftHint")}
         </p>
       )}

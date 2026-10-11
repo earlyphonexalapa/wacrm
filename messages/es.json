@@ -233,7 +233,8 @@
       "unknown": "Desconocido",
       "filterNeedsHuman": "Requiere atención",
       "filterMine": "Mis leads",
-      "ownerTitle": "Closer: {name}"
+      "ownerTitle": "Closer: {name}",
+      "yesterday": "Ayer"
     },
     "messageThread": {
       "backToConversations": "Volver a las conversaciones",
@@ -2265,5 +2266,32 @@
     "description": "Pulsa Reintentar. Si se repite, envía una captura de este mensaje.",
     "retry": "Reintentar",
     "reload": "Recargar la página"
+  },
+  "Mobile": {
+    "chats": "Chats",
+    "more": "Más",
+    "searchChats": "Buscar",
+    "installTitle": "Instala wacrm en tu iPhone",
+    "installBody": "Toca <share></share> Compartir y luego «Agregar a pantalla de inicio». Se abrirá como una app, a pantalla completa y con notificaciones.",
+    "installNotSafari": "Abre esta página en Safari para instalarla en tu iPhone.",
+    "dismiss": "Cerrar",
+    "pushTitle": "Activa las notificaciones",
+    "pushBody": "Recibe un aviso en tu teléfono cuando te escriba un cliente, aunque la app esté cerrada.",
+    "pushEnable": "Activar",
+    "pushLater": "Ahora no",
+    "pushEnabled": "Notificaciones activadas en este dispositivo",
+    "pushDenied": "Las notificaciones están bloqueadas. Actívalas en Ajustes › Notificaciones › wacrm.",
+    "pushUnavailable": "Las notificaciones no están configuradas en el servidor.",
+    "pushFailed": "No se pudieron activar las notificaciones.",
+    "settingsTitle": "App del teléfono",
+    "settingsDesc": "Instala wacrm en tu iPhone o Android como una app y recibe notificaciones de mensajes nuevos.",
+    "settingsInstalled": "Estás usando la app instalada.",
+    "settingsNotInstalled": "En iPhone: abre wacrm en Safari, toca Compartir › «Agregar a pantalla de inicio» y abre la app desde el icono.",
+    "settingsPushOn": "Notificaciones activas en este dispositivo",
+    "settingsPushOff": "Notificaciones desactivadas en este dispositivo",
+    "settingsPushNeedsInstall": "En iPhone las notificaciones solo funcionan desde la app instalada (iOS 16.4 o superior).",
+    "pushDisable": "Desactivar",
+    "pushTest": "Enviar prueba",
+    "pushTestSent": "Notificación de prueba enviada"
   }
 }

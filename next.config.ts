@@ -151,6 +151,16 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // The service worker must never be served stale from the CDN,
+        // or phones keep running an old one after a deploy. Listed after
+        // the catch-all so its Cache-Control wins.
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
+      {
         // Security headers on every response, including /_next/static
         // assets (nosniff matters there) and /api/* (HSTS + referrer-
         // policy don't hurt).

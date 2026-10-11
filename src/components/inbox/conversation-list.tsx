@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import { Search, ChevronDown, X } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
 import {
@@ -58,6 +58,7 @@ export function ConversationList({
   resyncToken = 0,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
+  const tMobile = useTranslations("Mobile");
   const { user, canManageMembers: seesOwnerBadge } = useAuth();
   const userId = user?.id ?? null;
   const { restricted } = useCloserIsolation();
@@ -299,15 +300,25 @@ export function ConversationList({
     // the single pane showing; fixed 320px on desktop where it shares the
     // row with the thread + contact sidebar.
     <div className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80">
+      {/* Phone app title bar, WhatsApp style. The shell hides its own
+          header in the inbox on phones; this clears the notch instead. */}
+      <div className="px-4 pt-[max(0.75rem,env(safe-area-inset-top))] lg:hidden">
+        <h1 className="text-[28px] font-bold tracking-tight text-foreground">
+          {tMobile("chats")}
+        </h1>
+      </div>
+
       {/* Search + Filter */}
-      <div className="space-y-2 border-b border-border p-3">
+      <div className="space-y-2 border-b border-border p-3 max-lg:pt-2">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={handleSearchChange}
             placeholder={t("searchPlaceholder")}
-            className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
+            type="search"
+            // 16px on phones so iOS doesn't zoom in when it gets focus.
+            className="border-border bg-muted pl-9 text-base text-foreground placeholder-muted-foreground focus:border-primary/50 max-lg:h-10 max-lg:rounded-xl max-lg:border-transparent lg:text-sm"
           />
         </div>
 
@@ -549,22 +560,27 @@ function ConversationItem({
         addSuffix: false,
       })
     : "";
+  // Phones show the time the way WhatsApp does: 14:05 / Ayer / 03/10/26.
+  const chatTime = conversation.last_message_at
+    ? formatChatTime(new Date(conversation.last_message_at), t("yesterday"))
+    : "";
+  const unread = conversation.unread_count > 0;
 
   return (
     <button
       onClick={handleClick}
       className={cn(
-        "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
+        "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50 max-lg:items-center max-lg:active:bg-muted/70",
         isActive && "border-l-2 border-primary bg-muted/70"
       )}
     >
       {/* Avatar */}
-      <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+      <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted text-base font-medium text-foreground lg:h-10 lg:w-10 lg:text-sm">
         {contact?.avatar_url ? (
           <img
             src={contact.avatar_url}
             alt={displayName}
-            className="h-10 w-10 rounded-full object-cover"
+            className="h-12 w-12 rounded-full object-cover lg:h-10 lg:w-10"
           />
         ) : (
           initials
@@ -580,20 +596,28 @@ function ConversationItem({
       </div>
 
       {/* Content */}
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 max-lg:border-b max-lg:border-border/60 max-lg:pb-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
+          <span className="truncate text-[16px] font-semibold text-foreground lg:text-sm lg:font-medium">
             {displayName}
           </span>
-          <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
+          <span className="hidden shrink-0 text-[10px] text-muted-foreground lg:inline">{timeAgo}</span>
+          <span
+            className={cn(
+              "shrink-0 text-xs lg:hidden",
+              unread ? "font-semibold text-primary" : "text-muted-foreground",
+            )}
+          >
+            {chatTime}
+          </span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="truncate text-sm text-muted-foreground lg:text-xs">
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
             {conversation.unread_count > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground lg:h-4 lg:min-w-4 lg:px-1 lg:text-[10px]">
                 {conversation.unread_count}
               </span>
             )}
@@ -609,4 +633,11 @@ function ConversationItem({
       </div>
     </button>
   );
+}
+
+/** WhatsApp's list timestamps: time today, "Yesterday", else the date. */
+function formatChatTime(date: Date, yesterday: string): string {
+  if (isToday(date)) return format(date, "HH:mm");
+  if (isYesterday(date)) return yesterday;
+  return format(date, "dd/MM/yy");
 }

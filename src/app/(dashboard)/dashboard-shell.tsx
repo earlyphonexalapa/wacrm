@@ -8,6 +8,10 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { AccountAccessAlert } from "@/components/layout/account-access-alert";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
+import { UnreadCountsProvider } from "@/hooks/use-unread-counts";
+import { PwaProvider } from "@/components/pwa/pwa-provider";
+import { PwaPrompts } from "@/components/pwa/pwa-prompts";
+import { MobileTabBar } from "@/components/pwa/mobile-tab-bar";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
@@ -57,16 +61,33 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
   if (!user) return null;
 
+  // The inbox is the phone app's home screen: on phones it draws its own
+  // WhatsApp-style "Chats" title bar, so the generic header steps aside.
+  const isInbox = pathname === "/inbox";
+
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <UnreadCountsProvider>
+    {/* --app-height tracks the visible area on phones (it shrinks when the
+        iOS keyboard opens — see PwaProvider); dvh is the fallback. */}
+    <div className="flex h-[var(--app-height,100dvh)] overflow-hidden bg-background">
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}
       <PresenceHeartbeat />
+      <PwaProvider />
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header onOpenSidebar={() => setSidebarOpen(true)} />
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <Header
+          onOpenSidebar={() => setSidebarOpen(true)}
+          className={isInbox ? "max-lg:hidden" : undefined}
+        />
         {/* Thinner horizontal padding on mobile so cards have room to breathe. */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <main
+          className={
+            isInbox
+              ? "flex min-h-0 flex-1 flex-col overflow-hidden lg:p-6"
+              : "flex-1 overflow-y-auto p-4 sm:p-6"
+          }
+        >
           {/* Above every page: writes are being rejected and here's why.
               Renders nothing unless the account/role failed to resolve. */}
           <AccountAccessAlert />
@@ -78,8 +99,11 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
             children
           )}
         </main>
+        <PwaPrompts />
+        <MobileTabBar onOpenMore={() => setSidebarOpen(true)} />
       </div>
     </div>
+    </UnreadCountsProvider>
   );
 }
 

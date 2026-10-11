@@ -226,6 +226,9 @@ vi.mock('@/lib/webhooks/deliver', () => ({
 vi.mock('@/lib/routing/assign', () => ({
   routeLead: h.routeLead,
 }))
+vi.mock('@/lib/push/send', () => ({
+  notifyInboundMessage: vi.fn(async () => {}),
+}))
 
 import { POST } from './route'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'

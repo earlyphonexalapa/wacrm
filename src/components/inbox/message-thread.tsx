@@ -23,7 +23,7 @@ import {
   UserPlus,
   Check,
   Clock,
-  ArrowLeft,
+  ChevronLeft,
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
@@ -112,6 +112,12 @@ interface MessageThreadProps {
    */
   showOwner?: boolean;
   onOwnerChange?: (conversationId: string, ownerId: string | null) => void;
+  /**
+   * Phone only: tapping the contact's name/avatar opens their info (tags,
+   * deals, notes) the way WhatsApp's "contact info" does. On lg+ the
+   * contact panel sits beside the thread instead.
+   */
+  onOpenContact?: () => void;
 }
 
 function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
@@ -172,6 +178,7 @@ export function MessageThread({
   onToggleContactPanel,
   showOwner = false,
   onOwnerChange,
+  onOpenContact,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
@@ -989,8 +996,10 @@ export function MessageThread({
     <div className={cn("flex min-w-0 flex-1 flex-col", DOODLE_BG_CLASSES)}>
       {/* Header — solid card surface sits on top of the doodle so the
           name/avatar/dropdowns stay legible. */}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+      {/* On a phone the header also clears the notch / status bar when the
+          app runs full screen (env() is 0 in a normal browser tab). */}
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 sm:px-4 lg:py-3">
+        <div className="flex min-w-0 items-center gap-1 sm:gap-3">
           {/* Back-to-list button — mobile only. Hidden on lg+ where the
               conversation list is always visible next to the thread. */}
           {onBack && (
@@ -998,18 +1007,36 @@ export function MessageThread({
               type="button"
               onClick={onBack}
               aria-label={t("backToConversations")}
-              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
+              className="flex h-10 w-8 flex-shrink-0 items-center justify-center rounded-md text-primary hover:bg-muted lg:hidden"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <ChevronLeft className="h-7 w-7" />
             </button>
           )}
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-            {displayName.charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
-            <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
-          </div>
+          <button
+            type="button"
+            onClick={onOpenContact}
+            disabled={!onOpenContact}
+            className="flex min-w-0 items-center gap-2 text-left lg:pointer-events-none sm:gap-3"
+          >
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-medium text-foreground">
+              {contact.avatar_url ? (
+                <img src={contact.avatar_url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                displayName.charAt(0).toUpperCase()
+              )}
+            </div>
+            <div className="min-w-0">
+              <h2 className="truncate text-[15px] font-semibold text-foreground lg:text-sm">{displayName}</h2>
+              <p className="truncate text-xs text-muted-foreground">
+                {contact.phone}
+                {/* Phones hide the session badge, so the window shows here. */}
+                <span className={cn("sm:hidden", sessionInfo.expired && "text-red-400")}>
+                  {" · "}
+                  {sessionInfo.remaining}
+                </span>
+              </p>
+            </div>
+          </button>
           {/* Session timer badge — hidden on the narrowest phones so
               the name + back arrow keep their room. */}
           <Badge
@@ -1065,7 +1092,8 @@ export function MessageThread({
               aria-label={t("refreshConversation")}
               title={t("refresh")}
               className={cn(
-                "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60",
+                // Phones skip it: the inbox already resyncs when the app comes back.
+                "hidden h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60 lg:inline-flex",
               )}
             >
               <RefreshCw
@@ -1225,7 +1253,7 @@ export function MessageThread({
           const el = e.currentTarget;
           nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
         }}
-        className="flex-1 overflow-y-auto px-4 py-4"
+        className="flex-1 overscroll-contain overflow-y-auto px-3 py-3 lg:px-4 lg:py-4"
       >
         {loading ? (
           <div className="flex items-center justify-center py-12">
