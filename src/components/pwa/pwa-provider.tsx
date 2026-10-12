@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useUnreadCounts } from "@/hooks/use-unread-counts";
+import { isStandalone } from "./use-push";
 
 // Headless glue for the installable phone app (docs/ios-app.md):
 //   - registers the service worker (push notifications live there)
@@ -80,8 +81,21 @@ export function PwaProvider() {
         if (!keyboardOpen) {
           root.style.removeProperty("--app-height");
           root.style.removeProperty("--app-top");
+          // iOS bug in installed apps: the window is shorter than the screen
+          // by the status-bar height even though the app draws under the
+          // status bar, so "bottom: 0" stops short and leaves a strip above
+          // the home indicator. Measure the shortfall and let the shell
+          // reach past it to the real bottom edge.
+          const portrait = window.matchMedia("(orientation: portrait)").matches;
+          const shortfall = Math.round(window.screen.height - window.innerHeight);
+          if (isStandalone() && portrait && shortfall > 0 && shortfall < 100) {
+            root.style.setProperty("--app-bottom-gap", `${shortfall}px`);
+          } else {
+            root.style.removeProperty("--app-bottom-gap");
+          }
           return;
         }
+        root.style.removeProperty("--app-bottom-gap");
         // Keyboard open: iOS shrinks the visual viewport and may pan it, so
         // the app follows both and the composer sits right on the keyboard.
         root.style.setProperty("--app-height", `${Math.round(vv.height)}px`);
@@ -97,6 +111,7 @@ export function PwaProvider() {
       vv.removeEventListener("scroll", apply);
       root.style.removeProperty("--app-height");
       root.style.removeProperty("--app-top");
+      root.style.removeProperty("--app-bottom-gap");
     };
   }, []);
 

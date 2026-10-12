@@ -238,6 +238,16 @@ html[data-theme="rose"] {
   }
 }
 
+/* Installed phone app: whatever shows behind the app at the screen edges
+   (under the home indicator, behind the status bar) matches the tab bar /
+   header surface, so the app always reads as edge to edge. */
+@media (display-mode: standalone) and (max-width: 1023px) {
+  html,
+  body {
+    background-color: var(--card);
+  }
+}
+
 /* Phones and tablets (touch, below the desktop layout). */
 @media (pointer: coarse) and (max-width: 1023px) {
   /* The page itself never rubber-bands: pulling past the top of a list

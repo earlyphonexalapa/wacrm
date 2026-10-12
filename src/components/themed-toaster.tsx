@@ -39,6 +39,13 @@ export function ThemedToaster() {
     <Toaster
       theme={isClient ? mode : DEFAULT_MODE}
       position="top-right"
+      // Phones: keep toasts below the notch / Dynamic Island in the
+      // installed app (env() is 0 in a normal browser tab).
+      mobileOffset={{
+        top: "calc(env(safe-area-inset-top) + 8px)",
+        left: "12px",
+        right: "12px",
+      }}
       toastOptions={{
         style: {
           background: "var(--popover)",
