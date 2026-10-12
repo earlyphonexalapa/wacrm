@@ -82,10 +82,11 @@ export function PwaProvider() {
           root.style.removeProperty("--app-height");
           root.style.removeProperty("--app-top");
           // iOS bug in installed apps: the window is shorter than the screen
-          // by the status-bar height even though the app draws under the
-          // status bar, so "bottom: 0" stops short and leaves a strip above
-          // the home indicator. Measure the shortfall and let the shell
-          // reach past it to the real bottom edge.
+          // by the status-bar height, leaving a strip at the bottom that the
+          // page can't draw into (only its background shows there — painted
+          // the tab-bar colour in globals.css). That strip already covers the
+          // home-indicator area, so the tab bar and composer subtract it from
+          // their bottom safe-area padding instead of adding a second gap.
           const portrait = window.matchMedia("(orientation: portrait)").matches;
           const shortfall = Math.round(window.screen.height - window.innerHeight);
           if (isStandalone() && portrait && shortfall > 0 && shortfall < 100) {

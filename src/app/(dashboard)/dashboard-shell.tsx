@@ -71,7 +71,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
         under the notch and the home indicator), so the page underneath never
         scrolls or rubber-bands; only lists scroll. While the keyboard is open
         --app-top / --app-height shrink it to the visible area (PwaProvider). */}
-    <div className="flex h-[var(--app-height,100dvh)] overflow-hidden bg-background max-lg:fixed max-lg:inset-x-0 max-lg:top-[var(--app-top,0px)] max-lg:bottom-[calc(-1*var(--app-bottom-gap,0px))] max-lg:h-[var(--app-height,auto)]">
+    <div className="flex h-[var(--app-height,100dvh)] overflow-hidden bg-background max-lg:fixed max-lg:inset-x-0 max-lg:top-[var(--app-top,0px)] max-lg:bottom-0 max-lg:h-[var(--app-height,auto)]">
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}
       <PresenceHeartbeat />

@@ -40,7 +40,7 @@ export function MobileTabBar({ onOpenMore }: MobileTabBarProps) {
   return (
     <nav
       aria-label={tm("more")}
-      className="flex shrink-0 items-stretch border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur select-none lg:hidden [html[data-chat-open]_&]:hidden"
+      className="flex shrink-0 items-stretch border-t border-border bg-card pb-[max(0px,calc(env(safe-area-inset-bottom)-var(--app-bottom-gap,0px)))] select-none lg:hidden [html[data-chat-open]_&]:hidden"
     >
       {tabs.map(({ href, label, icon: Icon, badge }) => {
         const active = shownPath === href || shownPath.startsWith(`${href}/`);

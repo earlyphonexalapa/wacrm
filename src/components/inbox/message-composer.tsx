@@ -651,7 +651,7 @@ export function MessageComposer({
   return (
     // Bottom padding clears the iPhone home indicator when the thread is
     // full screen in the installed app (env() is 0 everywhere else).
-    <div className="border-t border-border bg-card p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:p-3">
+    <div className="border-t border-border bg-card p-2 pb-[max(0.5rem,calc(env(safe-area-inset-bottom)-var(--app-bottom-gap,0px)))] lg:p-3">
       {replyTo && (
         <div className="mb-2">
           <ReplyQuote
