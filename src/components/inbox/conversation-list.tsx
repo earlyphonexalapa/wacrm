@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { memo, useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { readInboxCache, writeInboxCache } from "@/lib/inbox/list-cache";
+import { prefetchMessages } from "@/lib/inbox/message-cache";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { useCloserIsolation } from "@/hooks/use-closer-isolation";
@@ -49,6 +51,10 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 
 type InboxFilter = ConversationStatus | "all" | "unread" | "needsHuman" | "mine";
+
+// Rows are drawn in pages as the list scrolls — painting 1,000 chats at
+// once is what made the inbox slow to open on a phone.
+const ROWS_PER_PAGE = 40;
 
 export function ConversationList({
   activeConversationId,
@@ -104,7 +110,11 @@ export function ConversationList({
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
-  const [loading, setLoading] = useState(true);
+  // The last list this device saw, shown at once while the live one loads.
+  // Only ever rendered client-side (the shell waits for auth), so reading
+  // localStorage up front can't cause a hydration mismatch.
+  const [cachedAtStart] = useState(() => readInboxCache(userId));
+  const [loading, setLoading] = useState(!cachedAtStart);
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
   // Broadcast audience filtering. Company is an exact match on the field.
@@ -128,6 +138,10 @@ export function ConversationList({
   useEffect(() => {
     onConversationsLoadedRef.current = onConversationsLoaded;
   });
+
+  useEffect(() => {
+    if (cachedAtStart) onConversationsLoadedRef.current(cachedAtStart);
+  }, [cachedAtStart]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -163,9 +177,9 @@ export function ConversationList({
         return;
       }
 
-      onConversationsLoadedRef.current(
-        mergeConversations(normalizeConversations(data ?? []), alwaysLoaded),
-      );
+      const loaded = mergeConversations(normalizeConversations(data ?? []), alwaysLoaded);
+      onConversationsLoadedRef.current(loaded);
+      writeInboxCache(userId, loaded);
       setLoading(false);
     })();
 
@@ -175,7 +189,7 @@ export function ConversationList({
     // `resyncToken` is included so the parent can force a refetch when
     // the realtime channel reconnects or the tab regains focus — catches
     // up on any events sent while the WS was disconnected or throttled.
-  }, [resyncToken]);
+  }, [resyncToken, userId]);
 
   // Tag definitions for the filter picker — loaded once so labels/colours
   // stay stable regardless of which conversations happen to be loaded.
@@ -266,6 +280,31 @@ export function ConversationList({
     return result;
   }, [conversations, filter, search, selectedTagIds, selectedCompany, userId]);
 
+  // How many rows are drawn. Starts over whenever the filters change.
+  const listKey = `${filter}|${search}|${selectedTagIds.join(",")}|${selectedCompany ?? ""}`;
+  const [paging, setPaging] = useState({ key: listKey, count: ROWS_PER_PAGE });
+  const visibleCount = paging.key === listKey ? paging.count : ROWS_PER_PAGE;
+  const showMoreRef = useRef(() => {});
+  useEffect(() => {
+    showMoreRef.current = () =>
+      setPaging((prev) => ({
+        key: listKey,
+        count: (prev.key === listKey ? prev.count : ROWS_PER_PAGE) + ROWS_PER_PAGE,
+      }));
+  }, [listKey]);
+  // Sentinel under the last drawn row: scrolling near it draws the next page.
+  const sentinelRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) showMoreRef.current();
+      },
+      { rootMargin: "800px 0px" },
+    );
+    io.observe(node);
+    return () => io.disconnect();
+  }, []);
+
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
       prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
@@ -322,11 +361,33 @@ export function ConversationList({
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-1">
+        {/* Phones: one swipeable row of WhatsApp-style filter pills (plus
+            the tag / company pickers). Desktop keeps the compact dropdowns. */}
+        <div className="flex flex-wrap items-center gap-1 max-lg:-mx-3 max-lg:flex-nowrap max-lg:gap-2 max-lg:overflow-x-auto max-lg:px-3 max-lg:[scrollbar-width:none]">
+          {FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setFilter(opt.value)}
+              className={cn(
+                "inline-flex h-8 shrink-0 items-center gap-1 rounded-full px-3 text-[13px] font-medium lg:hidden",
+                filter === opt.value
+                  ? "bg-primary/20 text-primary"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {opt.label}
+              {opt.value === "needsHuman" && needsHumanCount > 0 && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
+                  {needsHumanCount}
+                </span>
+              )}
+            </button>
+          ))}
           <DropdownMenu>
             <DropdownMenuTrigger
               className={cn(
-                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted max-lg:hidden",
                 filter === "needsHuman"
                   ? "text-amber-500 hover:text-amber-500"
                   : "text-muted-foreground hover:text-foreground",
@@ -370,7 +431,7 @@ export function ConversationList({
             <DropdownMenu>
               <DropdownMenuTrigger
                 className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted max-lg:h-8 max-lg:shrink-0 max-lg:rounded-full max-lg:bg-muted max-lg:px-3 max-lg:text-[13px]",
                   selectedTagIds.length > 0
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground"
@@ -412,7 +473,7 @@ export function ConversationList({
             <DropdownMenu>
               <DropdownMenuTrigger
                 className={cn(
-                  "inline-flex max-w-40 items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  "inline-flex max-w-40 items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted max-lg:h-8 max-lg:shrink-0 max-lg:rounded-full max-lg:bg-muted max-lg:px-3 max-lg:text-[13px]",
                   selectedCompany
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground"
@@ -510,7 +571,7 @@ export function ConversationList({
           </div>
         ) : (
           <div className="flex flex-col">
-            {filtered.map((conv) => (
+            {filtered.slice(0, visibleCount).map((conv) => (
               <ConversationItem
                 key={conv.id}
                 conversation={conv}
@@ -524,6 +585,9 @@ export function ConversationList({
                 t={t}
               />
             ))}
+            {filtered.length > visibleCount && (
+              <div key={visibleCount} ref={sentinelRef} className="h-px" aria-hidden />
+            )}
           </div>
         )}
       </ScrollArea>
@@ -540,7 +604,8 @@ interface ConversationItemProps {
   t: ReturnType<typeof useTranslations>;
 }
 
-function ConversationItem({
+// Memoised: a realtime update to one chat re-renders that row, not all of them.
+const ConversationItem = memo(function ConversationItem({
   conversation,
   isActive,
   onSelect,
@@ -569,6 +634,9 @@ function ConversationItem({
   return (
     <button
       onClick={handleClick}
+      // Start loading the thread the moment a finger lands on the row, so
+      // it's usually ready by the time the tap completes.
+      onPointerDown={() => prefetchMessages(conversation.id)}
       className={cn(
         "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50 max-lg:items-center max-lg:active:bg-muted/70",
         isActive && "border-l-2 border-primary bg-muted/70"
@@ -612,7 +680,7 @@ function ConversationItem({
           </span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className="truncate text-sm text-muted-foreground lg:text-xs">
+          <p className="text-[15px] leading-snug text-muted-foreground max-lg:line-clamp-2 lg:truncate lg:text-xs">
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -623,7 +691,7 @@ function ConversationItem({
             )}
             <span
               className={cn(
-                "h-2 w-2 rounded-full",
+                "h-2 w-2 rounded-full max-lg:hidden",
                 STATUS_COLORS[conversation.status]
               )}
               title={conversation.status}
@@ -633,7 +701,7 @@ function ConversationItem({
       </div>
     </button>
   );
-}
+});
 
 /** WhatsApp's list timestamps: time today, "Yesterday", else the date. */
 function formatChatTime(date: Date, yesterday: string): string {

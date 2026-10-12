@@ -13,6 +13,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
+import { clearInboxCaches } from "@/lib/inbox/list-cache";
 import {
   canEditSettings as canEditSettingsFor,
   canManageMembers as canManageMembersFor,
@@ -398,6 +399,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Best-effort; never block signing out.
     }
+    // The chat list cached for instant start-up belongs to this user only.
+    clearInboxCaches();
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);

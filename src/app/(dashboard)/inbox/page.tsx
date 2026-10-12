@@ -660,7 +660,9 @@ function InboxPageInner() {
             thread can occupy the full width. Always visible on lg+. */}
         <div
           className={cn(
-            "flex h-full flex-1 lg:flex-none",
+            // min-w-0: without it the row grows to its longest preview text and
+            // pushes the times off the right edge of a phone screen.
+            "flex h-full min-w-0 flex-1 lg:flex-none",
             hasActiveConv ? "hidden lg:flex" : "flex",
           )}
         >
@@ -686,7 +688,10 @@ function InboxPageInner() {
         <div
           className={cn(
             "flex h-full min-w-0 flex-1 lg:flex",
-            hasActiveConv ? "flex" : "hidden lg:flex",
+            hasActiveConv
+              ? // Phones: the opened chat slides in from the right, like iOS.
+                "flex max-lg:animate-in max-lg:fade-in-0 max-lg:slide-in-from-right-16 max-lg:duration-200"
+              : "hidden lg:flex",
           )}
         >
           <MessageThread

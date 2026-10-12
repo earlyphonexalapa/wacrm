@@ -103,6 +103,9 @@ export function isMfaExemptPath(pathname: string): boolean {
   if (pathname === '/') return true
   if (pathname === '/2fa' || pathname.startsWith('/2fa/')) return true
   if (['/login', '/signup', '/forgot-password'].includes(pathname)) return true
+  // Only trades an emailed reset link for a session; /reset-password itself
+  // stays behind the gate, so a 2FA user still verifies before changing it.
+  if (pathname === '/auth/callback') return true
   if (pathname === '/icon' || pathname === '/robots.txt' || pathname === '/sitemap.xml') return true
   if (pathname.startsWith('/join/')) return true
   if (pathname.startsWith('/api/auth/2fa/')) return true

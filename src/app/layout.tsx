@@ -56,9 +56,11 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   width: "device-width",
   initialScale: 1,
-  // iOS zooms the page when focusing an input under 16px and never zooms
-  // back — in a chat app that's every message typed. Pinch-zoom stays on.
+  // The installed phone app should behave like a native one: no zooming in
+  // when an input is focused and no pinch-zooming the whole interface.
+  // (Images still open full size in the media viewer.)
   maximumScale: 1,
+  userScalable: false,
 };
 
 // Inline boot script — runs before React hydrates so the user's

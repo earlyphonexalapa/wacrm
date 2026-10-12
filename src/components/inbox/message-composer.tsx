@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useSyncExternalStore,
   KeyboardEvent,
 } from "react";
 import {
@@ -22,6 +23,7 @@ import {
   Plus,
   MessageSquareDashed,
   Zap,
+  Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -131,6 +133,22 @@ function formatDuration(seconds: number): string {
  *  Meta-accepted format means no server ffmpeg / transcode step. */
 const OPUS_ENCODER_PATH = "/opus/encoderWorker.min.js";
 
+// Phone / tablet (touch screen, below the desktop layout). Read through
+// useSyncExternalStore so it's false during server render and live after.
+const PHONE_QUERY = "(pointer: coarse) and (max-width: 1023px)";
+function subscribePhone(onChange: () => void) {
+  const mq = window.matchMedia(PHONE_QUERY);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+function useIsPhone(): boolean {
+  return useSyncExternalStore(
+    subscribePhone,
+    () => window.matchMedia(PHONE_QUERY).matches,
+    () => false,
+  );
+}
+
 export function MessageComposer({
   conversationId,
   sessionExpired,
@@ -142,6 +160,8 @@ export function MessageComposer({
   onClearReply,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
+  const tMobile = useTranslations("Mobile");
+  const isPhone = useIsPhone();
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -162,6 +182,7 @@ export function MessageComposer({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   // Mirror of `draft` for the unmount cleanup, which can't read render
   // state. Kept in sync below so navigating away with a staged-but-unsent
   // attachment GCs the orphaned object.
@@ -181,6 +202,10 @@ export function MessageComposer({
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const recorderRef = useRef<import("opus-recorder").default | null>(null);
+  // Native fallback recorder + the mic stream / audio graph we own.
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const cancelledRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -207,8 +232,10 @@ export function MessageComposer({
     return () => {
       clearTimer();
       cancelledRef.current = true;
-      // stop() releases the mic stream + audio context inside opus-recorder.
       void recorderRef.current?.stop().catch(() => {});
+      if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      void audioCtxRef.current?.close().catch(() => {});
       removeStaged(draftRef.current?.path);
     };
   }, [clearTimer, removeStaged]);
@@ -423,15 +450,40 @@ export function MessageComposer({
   );
 
   // ---- Voice recording (client-side Ogg/Opus, no server transcode) ---
+  //
+  // iPhone rules shape this: the mic and the AudioContext must be requested
+  // inside the tap itself, before any other await, or iOS refuses the mic /
+  // records silence. So the AudioContext is created synchronously and the
+  // mic is asked for first; the encoder module (preloaded on mount) is only
+  // awaited after. If the Opus encoder can't run, the browser's own
+  // recorder takes over (AAC in MP4 on iPhone — Meta accepts audio/mp4).
 
-  // The encoded Ogg/Opus file from opus-recorder → upload as an audio
-  // draft. WhatsApp renders Ogg/Opus as a playable voice note.
+  const recorderModuleRef = useRef<Promise<typeof import("opus-recorder")> | null>(null);
+  const loadRecorderModule = useCallback(
+    () => (recorderModuleRef.current ??= import("opus-recorder")),
+    [],
+  );
+  useEffect(() => {
+    // Warm the encoder in the background so a tap on the mic is instant.
+    if (!readOnly) void loadRecorderModule().catch(() => {});
+  }, [readOnly, loadRecorderModule]);
+
+  const releaseMic = useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    void audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+  }, []);
+
+  // A finished take → upload as an audio draft. WhatsApp renders Ogg/Opus
+  // as a playable voice note; MP4/AAC arrives as an audio message.
   const finalizeRecording = useCallback(
-    async (bytes: Uint8Array) => {
+    async (audio: Uint8Array | Blob, mime: "audio/ogg" | "audio/mp4") => {
       // Uint8Array is a valid BlobPart at runtime; the cast sidesteps the
       // lib.dom ArrayBufferLike-vs-ArrayBuffer generic mismatch.
-      const file = new File([bytes as unknown as BlobPart], `voice-${Date.now()}.ogg`, {
-        type: "audio/ogg",
+      const ext = mime === "audio/ogg" ? "ogg" : "m4a";
+      const file = new File([audio as unknown as BlobPart], `voice-${Date.now()}.${ext}`, {
+        type: mime,
       });
       if (file.size === 0) return; // cancelled / empty take
       if (file.size > MEDIA_MAX_BYTES_BY_KIND.audio) {
@@ -454,50 +506,107 @@ export function MessageComposer({
 
   const startRecording = useCallback(async () => {
     if (inputsDisabled || busy || recording) return;
-    if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === "undefined") {
+    if (!navigator.mediaDevices?.getUserMedia) {
       toast.error("Voice recording isn't supported in this browser.");
       return;
     }
+    const AudioCtx =
+      window.AudioContext ??
+      (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const ctx = AudioCtx ? new AudioCtx() : null;
+    const modulePromise = loadRecorderModule();
+
+    let stream: MediaStream;
     try {
-      // Lazy-load the encoder (≈400 KB worker) only when the user records,
-      // keeping it out of the main bundle.
-      const { default: Recorder } = await import("opus-recorder");
-      const recorder = new Recorder({
-        encoderPath: OPUS_ENCODER_PATH,
-        numberOfChannels: 1,
-        encoderApplication: 2048, // VOIP — tuned for speech
-        encoderSampleRate: 48000,
-        streamPages: false, // one callback with the complete file on stop
-      });
-      cancelledRef.current = false;
-      recorder.ondataavailable = (bytes) => {
-        if (cancelledRef.current) return;
-        void finalizeRecording(bytes);
-      };
-      recorderRef.current = recorder;
-      await recorder.start();
-      setRecording(true);
-      setRecordSeconds(0);
-      timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
-    } catch {
-      void recorderRef.current?.stop().catch(() => {});
-      recorderRef.current = null;
-      toast.error("Microphone access denied or unavailable.");
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      void ctx?.close().catch(() => {});
+      const denied = err instanceof DOMException && err.name === "NotAllowedError";
+      toast.error(denied ? tMobile("micDenied") : tMobile("micFailed"));
+      return;
     }
-  }, [inputsDisabled, busy, recording, finalizeRecording]);
+    streamRef.current = stream;
+    cancelledRef.current = false;
+
+    let started = false;
+    if (ctx) {
+      try {
+        await ctx.resume();
+        const { default: Recorder } = await modulePromise;
+        const recorder = new Recorder({
+          sourceNode: ctx.createMediaStreamSource(stream),
+          encoderPath: OPUS_ENCODER_PATH,
+          numberOfChannels: 1,
+          encoderApplication: 2048, // VOIP — tuned for speech
+          encoderSampleRate: 48000,
+          streamPages: false, // one callback with the complete file on stop
+        });
+        recorder.ondataavailable = (bytes) => {
+          if (cancelledRef.current) return;
+          void finalizeRecording(bytes, "audio/ogg");
+        };
+        await recorder.start();
+        recorderRef.current = recorder;
+        audioCtxRef.current = ctx;
+        started = true;
+      } catch (err) {
+        console.warn("[voice] Opus encoder unavailable, using MediaRecorder:", err);
+        void ctx.close().catch(() => {});
+      }
+    }
+
+    if (!started) {
+      const mime =
+        typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/mp4")
+          ? "audio/mp4"
+          : null;
+      if (!mime) {
+        releaseMic();
+        toast.error(tMobile("micFailed"));
+        return;
+      }
+      const chunks: Blob[] = [];
+      const mr = new MediaRecorder(stream, { mimeType: mime });
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      mr.onstop = () => {
+        releaseMic();
+        if (!cancelledRef.current) void finalizeRecording(new Blob(chunks), "audio/mp4");
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+    }
+
+    setRecording(true);
+    setRecordSeconds(0);
+    timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+  }, [inputsDisabled, busy, recording, finalizeRecording, loadRecorderModule, releaseMic, tMobile]);
+
+  // Stop whichever engine is running. Opus hands over the file before its
+  // stop() resolves; MediaRecorder does it in onstop (and releases the mic).
+  const stopEngine = useCallback(() => {
+    const opus = recorderRef.current;
+    recorderRef.current = null;
+    if (opus) void opus.stop().catch(() => {}).finally(releaseMic);
+    const mr = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (mr && mr.state !== "inactive") mr.stop();
+    else if (!opus) releaseMic();
+  }, [releaseMic]);
 
   const stopRecording = useCallback(() => {
     clearTimer();
     setRecording(false);
-    void recorderRef.current?.stop().catch(() => {});
-  }, [clearTimer]);
+    stopEngine();
+  }, [clearTimer, stopEngine]);
 
   const cancelRecording = useCallback(() => {
     cancelledRef.current = true;
     clearTimer();
     setRecording(false);
-    void recorderRef.current?.stop().catch(() => {});
-  }, [clearTimer]);
+    stopEngine();
+  }, [clearTimer, stopEngine]);
 
   // Auto-stop at the cap so a forgotten recording can't blow the
   // upload size limit.
@@ -590,6 +699,18 @@ export function MessageComposer({
           e.target.value = "";
         }}
       />
+      {/* Phone camera button: opens the camera straight away. */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          handlePicked("image", e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
       <input
         ref={documentInputRef}
         type="file"
@@ -647,7 +768,7 @@ export function MessageComposer({
                     ? undefined
                     : t("attachMedia")
               }
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 lg:h-9 lg:w-9 lg:rounded-md"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 max-lg:hidden lg:h-9 lg:w-9 lg:rounded-md"
             >
               {busy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -679,7 +800,7 @@ export function MessageComposer({
               24h window like free-form text (interactive requires it). */}
           <DropdownMenu>
             <DropdownMenuTrigger
-              disabled={inputsDisabled}
+              disabled={inputsDisabled || (isPhone && busy)}
               title={
                 readOnly
                   ? t("readOnlyTitle")
@@ -689,9 +810,26 @@ export function MessageComposer({
               }
               className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 lg:h-9 lg:w-9 lg:rounded-md"
             >
-              <Plus className="h-4 w-4" />
+              {busy ? (
+                <Loader2 className="h-5 w-5 animate-spin lg:h-4 lg:w-4" />
+              ) : (
+                <Plus className="h-6 w-6 lg:h-4 lg:w-4" />
+              )}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="border-border bg-popover">
+              {/* Phones have one + menu, like WhatsApp: attachments first. */}
+              <DropdownMenuItem className="lg:hidden" onClick={() => imageInputRef.current?.click()}>
+                <ImageIcon className="mr-2 h-4 w-4" />
+                {t("photo")}
+              </DropdownMenuItem>
+              <DropdownMenuItem className="lg:hidden" onClick={() => videoInputRef.current?.click()}>
+                <Video className="mr-2 h-4 w-4" />
+                {t("video")}
+              </DropdownMenuItem>
+              <DropdownMenuItem className="lg:hidden" onClick={() => documentInputRef.current?.click()}>
+                <FileText className="mr-2 h-4 w-4" />
+                {t("document")}
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
                 <MessageSquareDashed className="mr-2 h-4 w-4" />
                 {t("interactiveMessage")}
@@ -762,7 +900,9 @@ export function MessageComposer({
                 ? t("readOnlyPlaceholder")
                 : sessionExpired
                   ? t("sessionExpiredPlaceholder")
-                  : t("typeMessagePlaceholder")
+                  : isPhone
+                    ? tMobile("messagePlaceholder")
+                    : t("typeMessagePlaceholder")
             }
             disabled={sessionExpired || readOnly}
             rows={1}
@@ -779,6 +919,17 @@ export function MessageComposer({
 
           {/* WhatsApp on a phone: an empty box shows the mic, typing swaps
               it for send. Desktop keeps the send button (mic is in 📎). */}
+          {showMic && (
+            <button
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              disabled={busy}
+              aria-label={t("photo")}
+              className="inline-flex h-10 w-9 shrink-0 items-center justify-center text-muted-foreground disabled:opacity-50 lg:hidden"
+            >
+              <Camera className="h-6 w-6" />
+            </button>
+          )}
           {showMic && (
             <button
               type="button"

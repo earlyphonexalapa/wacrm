@@ -67,9 +67,10 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
   return (
     <UnreadCountsProvider>
-    {/* --app-height tracks the visible area on phones (it shrinks when the
-        iOS keyboard opens — see PwaProvider); dvh is the fallback. */}
-    <div className="flex h-[var(--app-height,100dvh)] overflow-hidden bg-background">
+    {/* On phones the app is pinned to the visible area (--app-top /
+        --app-height follow the iOS keyboard — see PwaProvider), so the page
+        underneath never scrolls or rubber-bands; only lists scroll. */}
+    <div className="flex h-[var(--app-height,100dvh)] overflow-hidden bg-background max-lg:fixed max-lg:inset-x-0 max-lg:top-[var(--app-top,0px)]">
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}
       <PresenceHeartbeat />
@@ -85,7 +86,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
           className={
             isInbox
               ? "flex min-h-0 flex-1 flex-col overflow-hidden lg:p-6"
-              : "flex-1 overflow-y-auto p-4 sm:p-6"
+              : "flex-1 overscroll-contain overflow-y-auto p-4 sm:p-6"
           }
         >
           {/* Above every page: writes are being rejected and here's why.

@@ -226,5 +226,31 @@ html[data-theme="rose"] {
   }
   html {
     @apply font-sans;
+    /* Native-app feel on phones: no grey flash on tap, no font inflation
+       when the phone rotates. */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  /* No double-tap zoom anywhere (taps also fire without the 300ms wait). */
+  body {
+    touch-action: manipulation;
+  }
+}
+
+/* Phones and tablets (touch, below the desktop layout). */
+@media (pointer: coarse) and (max-width: 1023px) {
+  /* The page itself never rubber-bands: pulling past the top of a list
+     must not drag the whole app down (only the list itself bounces). */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+  /* iOS zooms into any field under 16px when it gets focus and never zooms
+     back out. 16px everywhere on phones keeps the app at its own scale. */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 }

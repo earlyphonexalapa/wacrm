@@ -3,6 +3,9 @@
 // Ogg/Opus file via `ondataavailable`. See https://github.com/chris-rudmin/opus-recorder
 declare module "opus-recorder" {
   interface RecorderConfig {
+    /** Record from this node instead of opening the mic itself. Its context
+     *  and stream are left alone on stop — the caller owns them. */
+    sourceNode?: AudioNode;
     /** URL of the encoder worker (served from /public). */
     encoderPath?: string;
     /** Media track constraints, or `true` for default audio. */

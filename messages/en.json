@@ -2292,6 +2292,9 @@
     "settingsPushNeedsInstall": "On iPhone, notifications only work from the installed app (iOS 16.4 or later).",
     "pushDisable": "Turn off",
     "pushTest": "Send test",
-    "pushTestSent": "Test notification sent"
+    "pushTestSent": "Test notification sent",
+    "messagePlaceholder": "Message",
+    "micDenied": "Allow the microphone in Settings › Apps › Safari › Microphone, then try again.",
+    "micFailed": "Couldn’t start recording."
   }
 }

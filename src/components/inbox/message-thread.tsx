@@ -2,6 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  fetchMessages,
+  getCachedMessages,
+  setCachedMessages,
+} from "@/lib/inbox/message-cache";
 import { useAuth } from "@/hooks/use-auth";
 import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
@@ -324,12 +329,19 @@ export function MessageThread({
   useEffect(() => {
     if (!conversationId) return;
 
-    const supabase = createClient();
     let cancelled = false;
 
     if (fetchedConversationRef.current !== conversationId) {
       fetchedConversationRef.current = conversationId;
       loadedConversationRef.current = null;
+    }
+
+    // Seen this thread recently (or the list row prefetched it on touch):
+    // show those messages right away and refresh underneath, no spinner.
+    const cached = getCachedMessages(conversationId);
+    if (cached && loadedConversationRef.current !== conversationId) {
+      onMessagesLoadedRef.current(cached);
+      loadedConversationRef.current = conversationId;
     }
 
     (async () => {
@@ -340,11 +352,7 @@ export function MessageThread({
       // reader's scroll position.
       if (loadedConversationRef.current !== conversationId) setLoading(true);
 
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
+      const { data, error } = await fetchMessages(conversationId);
 
       if (cancelled) return;
 
@@ -366,6 +374,21 @@ export function MessageThread({
     // realtime is best-effort and any message events sent while the WS
     // was disconnected or throttled are otherwise lost.
   }, [conversationId, resyncToken]);
+
+  // Keep the cached copy current with live updates (new messages, status
+  // ticks) so reopening this chat later starts from what was last on screen.
+  useEffect(() => {
+    // The conversation_id check skips the render right after a chat switch,
+    // when `messages` still holds the previous (or the cleared) list.
+    if (
+      conversationId &&
+      loadedConversationRef.current === conversationId &&
+      messages.length > 0 &&
+      messages[messages.length - 1].conversation_id === conversationId
+    ) {
+      setCachedMessages(conversationId, messages);
+    }
+  }, [conversationId, messages]);
 
   // Reactions fetch — pulls the current state from the DB. Kept separate
   // from the channel subscription below so a `resyncToken` bump just
@@ -998,8 +1021,10 @@ export function MessageThread({
           name/avatar/dropdowns stay legible. */}
       {/* On a phone the header also clears the notch / status bar when the
           app runs full screen (env() is 0 in a normal browser tab). */}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 sm:px-4 lg:py-3">
-        <div className="flex min-w-0 items-center gap-1 sm:gap-3">
+      {/* Phones: name on the first row (WhatsApp style), the CRM controls
+          as a row of chips under it so nothing is squeezed. lg+: one row. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-border bg-card px-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 sm:px-4 lg:flex-nowrap lg:py-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-3 lg:flex-none">
           {/* Back-to-list button — mobile only. Hidden on lg+ where the
               conversation list is always visible next to the thread. */}
           {onBack && (
@@ -1018,7 +1043,7 @@ export function MessageThread({
             disabled={!onOpenContact}
             className="flex min-w-0 items-center gap-2 text-left lg:pointer-events-none sm:gap-3"
           >
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-medium text-foreground">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-sm font-medium text-foreground lg:h-9 lg:w-9">
               {contact.avatar_url ? (
                 <img src={contact.avatar_url} alt="" className="h-full w-full object-cover" />
               ) : (
@@ -1026,7 +1051,7 @@ export function MessageThread({
               )}
             </div>
             <div className="min-w-0">
-              <h2 className="truncate text-[15px] font-semibold text-foreground lg:text-sm">{displayName}</h2>
+              <h2 className="truncate text-[17px] font-semibold text-foreground lg:text-sm">{displayName}</h2>
               <p className="truncate text-xs text-muted-foreground">
                 {contact.phone}
                 {/* Phones hide the session badge, so the window shows here. */}
@@ -1051,7 +1076,7 @@ export function MessageThread({
           </Badge>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 max-lg:-mx-2 max-lg:w-[calc(100%+1rem)] max-lg:overflow-x-auto max-lg:px-2 max-lg:[scrollbar-width:none] max-lg:[&>button]:h-8 max-lg:[&>button]:shrink-0 max-lg:[&>button]:rounded-full max-lg:[&>button]:bg-muted max-lg:[&>button]:px-3 max-lg:[&>button]:text-[13px]">
           {/* Contact-panel toggle — desktop only. The contact sidebar
               eats a chunk of horizontal width that crowds the thread on
               smaller laptops; this lets agents reclaim it when they just
@@ -1136,7 +1161,7 @@ export function MessageThread({
               )}
             >
               <UserPlus className="h-3 w-3" />
-              <span className="hidden sm:inline">{assignLabel}</span>
+              <span className="max-w-28 truncate">{assignLabel}</span>
               <ChevronDown className="h-3 w-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent

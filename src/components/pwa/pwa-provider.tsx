@@ -59,19 +59,26 @@ export function PwaProvider() {
     const vv = window.visualViewport;
     if (!vv || !window.matchMedia("(pointer: coarse)").matches) return;
     const root = document.documentElement;
+    let frame = 0;
     const apply = () => {
-      root.style.setProperty("--app-height", `${Math.round(vv.height)}px`);
-      // iOS scrolls the page to reveal the focused input; the app already
-      // shrank to fit, so undo that scroll to keep the header in place.
-      if (window.scrollY !== 0) window.scrollTo(0, 0);
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        // The shell is pinned to exactly the visible area: when the keyboard
+        // opens iOS shrinks the visual viewport and may pan it down, so the
+        // app follows both instead of sliding off screen.
+        root.style.setProperty("--app-height", `${Math.round(vv.height)}px`);
+        root.style.setProperty("--app-top", `${Math.round(vv.offsetTop)}px`);
+      });
     };
     apply();
     vv.addEventListener("resize", apply);
     vv.addEventListener("scroll", apply);
     return () => {
+      cancelAnimationFrame(frame);
       vv.removeEventListener("resize", apply);
       vv.removeEventListener("scroll", apply);
       root.style.removeProperty("--app-height");
+      root.style.removeProperty("--app-top");
     };
   }, []);
 
