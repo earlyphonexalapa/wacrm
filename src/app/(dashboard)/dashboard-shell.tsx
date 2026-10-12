@@ -67,10 +67,11 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
   return (
     <UnreadCountsProvider>
-    {/* On phones the app is pinned to the visible area (--app-top /
-        --app-height follow the iOS keyboard — see PwaProvider), so the page
-        underneath never scrolls or rubber-bands; only lists scroll. */}
-    <div className="flex h-[var(--app-height,100dvh)] overflow-hidden bg-background max-lg:fixed max-lg:inset-x-0 max-lg:top-[var(--app-top,0px)]">
+    {/* On phones the app is pinned edge to edge (fixed, top and bottom 0,
+        under the notch and the home indicator), so the page underneath never
+        scrolls or rubber-bands; only lists scroll. While the keyboard is open
+        --app-top / --app-height shrink it to the visible area (PwaProvider). */}
+    <div className="flex h-[var(--app-height,100dvh)] overflow-hidden bg-background max-lg:fixed max-lg:inset-x-0 max-lg:top-[var(--app-top,0px)] max-lg:bottom-0 max-lg:h-[var(--app-height,auto)]">
       {/* Reports this tab's online/away presence once we know a user is
           signed in. Headless — renders nothing. */}
       <PresenceHeartbeat />

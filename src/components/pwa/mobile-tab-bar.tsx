@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -24,6 +25,10 @@ export function MobileTabBar({ onOpenMore }: MobileTabBarProps) {
   const pathname = usePathname();
   const { accountRole } = useAuth();
   const { chats, notifications } = useUnreadCounts();
+  // The tapped tab lights up immediately, before the page has loaded — a
+  // native tab bar never waits. Ignored once the route actually changes.
+  const [pending, setPending] = useState<{ from: string; href: string } | null>(null);
+  const shownPath = pending && pending.from === pathname ? pending.href : pathname;
 
   const tabs = [
     { href: "/inbox", label: tm("chats"), icon: MessageCircle, badge: chats },
@@ -35,16 +40,17 @@ export function MobileTabBar({ onOpenMore }: MobileTabBarProps) {
   return (
     <nav
       aria-label={tm("more")}
-      className="flex shrink-0 items-stretch border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden [html[data-chat-open]_&]:hidden"
+      className="flex shrink-0 items-stretch border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur select-none lg:hidden [html[data-chat-open]_&]:hidden"
     >
       {tabs.map(({ href, label, icon: Icon, badge }) => {
-        const active = pathname === href || pathname.startsWith(`${href}/`);
+        const active = shownPath === href || shownPath.startsWith(`${href}/`);
         return (
           <Link
             key={href}
             href={href}
+            onClick={() => setPending({ from: pathname, href })}
             className={cn(
-              "relative flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium",
+              "relative flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-opacity active:opacity-50",
               active ? "text-primary" : "text-muted-foreground",
             )}
           >
@@ -63,7 +69,7 @@ export function MobileTabBar({ onOpenMore }: MobileTabBarProps) {
       <button
         type="button"
         onClick={onOpenMore}
-        className="flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium text-muted-foreground"
+        className="flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium text-muted-foreground transition-opacity active:opacity-50"
       >
         <Menu className="h-6 w-6" />
         {tm("more")}

@@ -55,6 +55,15 @@ export function PwaProvider() {
     (chats > 0 ? nav.setAppBadge(chats) : nav.clearAppBadge?.())?.catch(() => {});
   }, [chats]);
 
+  // iOS only shows :active (pressed) styles when the page listens for
+  // touches. Without this, taps give no feedback until the action finishes,
+  // which reads as lag.
+  useEffect(() => {
+    const noop = () => {};
+    document.addEventListener("touchstart", noop, { passive: true });
+    return () => document.removeEventListener("touchstart", noop);
+  }, []);
+
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv || !window.matchMedia("(pointer: coarse)").matches) return;
@@ -63,9 +72,18 @@ export function PwaProvider() {
     const apply = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        // The shell is pinned to exactly the visible area: when the keyboard
-        // opens iOS shrinks the visual viewport and may pan it down, so the
-        // app follows both instead of sliding off screen.
+        // Keyboard closed: leave the shell pinned top-to-bottom of the
+        // screen (inset 0). Measured heights can't be trusted there — an
+        // installed iPhone app reports the screen minus the status bar,
+        // which left a strip under the tab bar.
+        const keyboardOpen = window.innerHeight - vv.height > 120;
+        if (!keyboardOpen) {
+          root.style.removeProperty("--app-height");
+          root.style.removeProperty("--app-top");
+          return;
+        }
+        // Keyboard open: iOS shrinks the visual viewport and may pan it, so
+        // the app follows both and the composer sits right on the keyboard.
         root.style.setProperty("--app-height", `${Math.round(vv.height)}px`);
         root.style.setProperty("--app-top", `${Math.round(vv.offsetTop)}px`);
       });
