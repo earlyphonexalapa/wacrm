@@ -844,7 +844,18 @@
         "errorLoadTags": "태그를 불러오지 못했습니다",
         "errorLoadFields": "커스텀 필드를 불러오지 못했습니다",
         "errorCsvParse": "CSV 파일을 파싱할 수 없습니다.",
-        "errorCsvMissingPhone": "CSV에 'phone' 열이 있어야 합니다."
+        "errorCsvMissingPhone": "CSV에 'phone' 열이 있어야 합니다.",
+        "recencyTitle": "날짜로 제한 (선택)",
+        "recencyNone": "제한 없음",
+        "recencyDays": "최근 {count}일",
+        "recencyBasis": {
+          "created": "신규 연락처",
+          "activity": "활동이 있는 연락처"
+        },
+        "recencyBasisDesc": {
+          "created": "해당 기간에 처음 연락한 연락처입니다.",
+          "activity": "이전에 등록되었더라도 해당 기간에 메시지가 있었던 연락처입니다."
+        }
       },
       "personalize": {
         "title": "변수 개인화",

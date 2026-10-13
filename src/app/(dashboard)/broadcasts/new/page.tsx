@@ -11,6 +11,7 @@ import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audien
 import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
 import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
+import type { AudienceRecency } from '@/lib/broadcasts/audience';
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -39,6 +40,7 @@ export default function NewBroadcastPage() {
     };
     csvContacts?: { phone: string; name?: string }[];
     excludeTagIds?: string[];
+    recency?: AudienceRecency | null;
   }>({ type: 'all' });
   const [variables, setVariables] = useState<
     Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>
@@ -59,6 +61,7 @@ export default function NewBroadcastPage() {
           customField: audience.customField,
           csvContacts: audience.csvContacts,
           excludeTagIds: audience.excludeTagIds,
+          recency: audience.recency,
         },
         variables,
         headerMediaUrl,
@@ -111,6 +114,8 @@ export default function NewBroadcastPage() {
       audience_filter: {
         type: audience.type,
         tagIds: audience.tagIds,
+        excludeTagIds: audience.excludeTagIds,
+        recency: audience.recency ?? undefined,
       },
       status: 'draft',
       total_recipients: 0,

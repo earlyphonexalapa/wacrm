@@ -16,12 +16,13 @@ import {
 } from '@/components/ui/dialog';
 import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import {
+  activeRecency,
+  resolveAudienceContactIds,
+  type AudienceFilter,
+} from '@/lib/broadcasts/audience';
 
-interface AudienceConfig {
-  type: string;
-  tagIds?: string[];
-  csvContacts?: { phone: string; name?: string }[];
-}
+type AudienceConfig = AudienceFilter;
 
 interface Step4Props {
   name: string;
@@ -52,38 +53,44 @@ export function Step4ScheduleSend({
   const [loadingReach, setLoadingReach] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     async function calculateReach() {
       setLoadingReach(true);
       try {
         const supabase = createClient();
+        let reach = 0;
 
-        if (audience.type === 'all') {
+        if (audience.type === 'csv') {
+          reach = audience.csvContacts?.length ?? 0;
+        } else if (
+          audience.type === 'all' &&
+          !activeRecency(audience.recency) &&
+          !audience.excludeTagIds?.length
+        ) {
           const { count } = await supabase
             .from('contacts')
             .select('*', { count: 'exact', head: true });
-          setEstimatedReach(count ?? 0);
-        } else if (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) {
-          const { data: contactTags } = await supabase
-            .from('contact_tags')
-            .select('contact_id')
-            .in('tag_id', audience.tagIds);
-
-          const uniqueIds = new Set((contactTags ?? []).map((ct) => ct.contact_id));
-          setEstimatedReach(uniqueIds.size);
-        } else if (audience.type === 'csv' && audience.csvContacts) {
-          setEstimatedReach(audience.csvContacts.length);
+          reach = count ?? 0;
         } else {
-          setEstimatedReach(0);
+          const ids = await resolveAudienceContactIds(supabase, audience);
+          reach = ids ? ids.size : 0;
         }
+        if (!cancelled) setEstimatedReach(reach);
+      } catch {
+        if (!cancelled) setEstimatedReach(0);
       } finally {
-        setLoadingReach(false);
+        if (!cancelled) setLoadingReach(false);
       }
     }
 
     calculateReach();
+    return () => {
+      cancelled = true;
+    };
   }, [audience]);
 
-  const audienceLabel =
+  const recency = activeRecency(audience.recency);
+  const baseAudienceLabel =
     audience.type === 'all'
       ? t('scheduleSend.audienceAll')
       : audience.type === 'tags'
@@ -91,6 +98,10 @@ export function Step4ScheduleSend({
         : audience.type === 'csv'
           ? t('scheduleSend.audienceCsv')
           : t('scheduleSend.audienceField');
+  const audienceLabel =
+    audience.type !== 'csv' && recency
+      ? `${baseAudienceLabel} · ${t('selectAudience.recencyDays', { count: recency.days })}`
+      : baseAudienceLabel;
 
   return (
     <div className="space-y-6">

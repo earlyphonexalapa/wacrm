@@ -844,7 +844,18 @@
         "errorLoadTags": "No se pudieron cargar las etiquetas",
         "errorLoadFields": "No se pudieron cargar los campos personalizados",
         "errorCsvParse": "No se pudo leer el archivo CSV.",
-        "errorCsvMissingPhone": "El CSV debe tener una columna 'phone'."
+        "errorCsvMissingPhone": "El CSV debe tener una columna 'phone'.",
+        "recencyTitle": "Limitar por fecha (opcional)",
+        "recencyNone": "Sin límite",
+        "recencyDays": "{count, plural, one {Último día} other {Últimos # días}}",
+        "recencyBasis": {
+          "created": "Contactos nuevos",
+          "activity": "Contactos con actividad"
+        },
+        "recencyBasisDesc": {
+          "created": "Los que llegaron por primera vez en ese periodo.",
+          "activity": "Los que tuvieron algún mensaje en ese periodo, aunque lleguen de antes."
+        }
       },
       "personalize": {
         "title": "Personalizar variables",

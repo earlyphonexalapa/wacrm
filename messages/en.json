@@ -844,7 +844,18 @@
         "errorLoadTags": "Failed to load tags",
         "errorLoadFields": "Failed to load custom fields",
         "errorCsvParse": "Could not parse CSV file.",
-        "errorCsvMissingPhone": "CSV must have a 'phone' column."
+        "errorCsvMissingPhone": "CSV must have a 'phone' column.",
+        "recencyTitle": "Limit by date (optional)",
+        "recencyNone": "No limit",
+        "recencyDays": "{count, plural, one {Last day} other {Last # days}}",
+        "recencyBasis": {
+          "created": "New contacts",
+          "activity": "Contacts with activity"
+        },
+        "recencyBasisDesc": {
+          "created": "Those who first reached you in that period.",
+          "activity": "Those with any message in that period, even if they arrived earlier."
+        }
       },
       "personalize": {
         "title": "Personalize Variables",

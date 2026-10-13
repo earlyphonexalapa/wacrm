@@ -8,6 +8,10 @@ import {
   batchRetryDelayMs,
 } from '@/lib/broadcast-retry';
 import { Contact, MessageTemplate } from '@/types';
+import {
+  resolveAudienceContactIds,
+  type AudienceRecency,
+} from '@/lib/broadcasts/audience';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
 
@@ -24,6 +28,8 @@ export interface AudienceConfig {
   csvContacts?: { phone: string; name?: string }[];
   /** Contacts carrying any of these tags are subtracted from the result. */
   excludeTagIds?: string[];
+  /** Only contacts from the last N days (by first contact, or by activity). */
+  recency?: AudienceRecency | null;
 }
 
 /**
@@ -164,53 +170,53 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
   async function resolveAudience(audience: AudienceConfig): Promise<Contact[]> {
     const supabase = createClient();
 
-    let contacts: Contact[] = [];
+    // CSV rows are raw phone numbers: they become contacts here, and the
+    // date window and excluded tags (which are about existing contacts) do
+    // not apply to them.
+    if (audience.type === 'csv') {
+      return audience.csvContacts
+        ? upsertCsvContacts(supabase, audience.csvContacts)
+        : [];
+    }
 
-    if (audience.type === 'all') {
-      const { data, error } = await supabase.from('contacts').select('*');
-      if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
-      contacts = data ?? [];
-    } else if (
-      audience.type === 'tags' &&
-      audience.tagIds &&
-      audience.tagIds.length > 0
-    ) {
-      const { data: contactTags, error: tagError } = await supabase
-        .from('contact_tags')
-        .select('contact_id')
-        .in('tag_id', audience.tagIds);
+    let ids: Set<string> | null;
+    try {
+      ids = await resolveAudienceContactIds(supabase, audience);
+    } catch (err) {
+      throw new Error(
+        `Failed to resolve the audience: ${err instanceof Error ? err.message : 'unknown error'}`,
+      );
+    }
+    if (!ids || ids.size === 0) return [];
 
-      if (tagError)
-        throw new Error(`Failed to fetch contact tags: ${tagError.message}`);
+    return fetchContactsByIds(supabase, [...ids]);
+  }
 
-      if (contactTags && contactTags.length > 0) {
-        const uniqueContactIds = [
-          ...new Set(contactTags.map((ct) => ct.contact_id)),
-        ];
-        const { data, error } = await supabase
-          .from('contacts')
-          .select('*')
-          .in('id', uniqueContactIds);
+  /**
+   * Full contact rows for a set of ids. Fetched in small chunks (an id list
+   * in the URL gets long fast) a few requests at a time.
+   */
+  async function fetchContactsByIds(
+    supabase: ReturnType<typeof createClient>,
+    ids: string[],
+  ): Promise<Contact[]> {
+    const CHUNK = 100;
+    const CONCURRENCY = 4;
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+
+    const contacts: Contact[] = [];
+    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      const results = await Promise.all(
+        chunks
+          .slice(i, i + CONCURRENCY)
+          .map((chunk) => supabase.from('contacts').select('*').in('id', chunk)),
+      );
+      for (const { data, error } of results) {
         if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
-        contacts = data ?? [];
+        contacts.push(...((data ?? []) as Contact[]));
       }
-    } else if (audience.type === 'custom_field' && audience.customField) {
-      contacts = await resolveCustomFieldAudience(supabase, audience.customField);
-    } else if (audience.type === 'csv' && audience.csvContacts) {
-      contacts = await upsertCsvContacts(supabase, audience.csvContacts);
     }
-
-    // Apply exclude tags (works across all contact-derived audience
-    // types). CSV contacts are synthetic so exclusion doesn't apply.
-    if (audience.excludeTagIds && audience.excludeTagIds.length > 0) {
-      const { data: excludeRows } = await supabase
-        .from('contact_tags')
-        .select('contact_id')
-        .in('tag_id', audience.excludeTagIds);
-      const excludedIds = new Set((excludeRows ?? []).map((r) => r.contact_id));
-      contacts = contacts.filter((c) => !excludedIds.has(c.id));
-    }
-
     return contacts;
   }
 
@@ -296,39 +302,6 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       .filter((c): c is Contact => Boolean(c));
   }
 
-  async function resolveCustomFieldAudience(
-    supabase: ReturnType<typeof createClient>,
-    filter: CustomFieldFilter,
-  ): Promise<Contact[]> {
-    const { fieldId, operator, value } = filter;
-
-    // Build the WHERE clause for the operator. PostgREST supports
-    // eq/neq/ilike via the query builder — use ilike with wildcards
-    // for "contains" so the match is case-insensitive.
-    let query = supabase
-      .from('contact_custom_values')
-      .select('contact_id')
-      .eq('custom_field_id', fieldId);
-
-    if (operator === 'is') query = query.eq('value', value);
-    else if (operator === 'is_not') query = query.neq('value', value);
-    else if (operator === 'contains') query = query.ilike('value', `%${value}%`);
-
-    const { data: matches, error: matchErr } = await query;
-    if (matchErr)
-      throw new Error(`Custom-field filter failed: ${matchErr.message}`);
-
-    const contactIds = [...new Set((matches ?? []).map((m) => m.contact_id))];
-    if (contactIds.length === 0) return [];
-
-    const { data, error } = await supabase
-      .from('contacts')
-      .select('*')
-      .in('id', contactIds);
-    if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
-    return data ?? [];
-  }
-
   async function createAndSendBroadcast(payload: BroadcastPayload): Promise<string> {
     setIsProcessing(true);
     setProgress(0);
@@ -376,6 +349,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             tagIds: payload.audience.tagIds,
             customField: payload.audience.customField,
             excludeTagIds: payload.audience.excludeTagIds,
+            recency: payload.audience.recency ?? undefined,
           },
           status: 'sending',
           total_recipients: contacts.length,

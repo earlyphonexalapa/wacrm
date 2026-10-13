@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -10,11 +10,19 @@ import {
   Filter,
   Upload,
   Loader2,
+  CalendarRange,
   ArrowRight,
   ArrowLeft,
   X,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import {
+  RECENCY_PRESET_DAYS,
+  activeRecency,
+  resolveAudienceContactIds,
+  type AudienceRecency,
+  type RecencyBasis,
+} from '@/lib/broadcasts/audience';
 
 type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -31,6 +39,7 @@ interface AudienceConfig {
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string }[];
   excludeTagIds?: string[];
+  recency?: AudienceRecency | null;
 }
 
 interface Step2Props {
@@ -127,87 +136,55 @@ export function Step2SelectAudience({
     fetchFields();
   }, [audience.type]);
 
+  // Estimates can overlap (every click re-runs it); only the latest one
+  // may write its answer.
+  const estimateRun = useRef(0);
+
   const fetchEstimatedCount = useCallback(async () => {
+    const run = ++estimateRun.current;
+    const isCurrent = () => run === estimateRun.current;
+
+    if (audience.type === 'csv') {
+      setEstimatedCount(audience.csvContacts?.length ? audience.csvContacts.length : null);
+      return;
+    }
+
+    // Partially-configured audience — wait for the user to finish.
+    const incomplete =
+      (audience.type === 'tags' && !audience.tagIds?.length) ||
+      (audience.type === 'custom_field' &&
+        !(audience.customField?.fieldId && audience.customField.value));
+    if (incomplete) {
+      setEstimatedCount(null);
+      return;
+    }
+
     setLoadingCount(true);
     try {
       const supabase = createClient();
+      const plainAll =
+        audience.type === 'all' &&
+        !activeRecency(audience.recency) &&
+        !audience.excludeTagIds?.length;
 
-      // Base query — produces the superset before exclude is applied.
-      let baseIds: Set<string> | null = null; // null means "all contacts"
-
-      if (audience.type === 'all') {
-        // Handled below — full-table count adjusted by excludes.
-      } else if (
-        audience.type === 'tags' &&
-        audience.tagIds &&
-        audience.tagIds.length > 0
-      ) {
-        const { data } = await supabase
-          .from('contact_tags')
-          .select('contact_id')
-          .in('tag_id', audience.tagIds);
-        baseIds = new Set((data ?? []).map((r) => r.contact_id));
-      } else if (
-        audience.type === 'custom_field' &&
-        audience.customField?.fieldId &&
-        audience.customField.value
-      ) {
-        const { fieldId, operator, value } = audience.customField;
-        let q = supabase
-          .from('contact_custom_values')
-          .select('contact_id')
-          .eq('custom_field_id', fieldId);
-        if (operator === 'is') q = q.eq('value', value);
-        else if (operator === 'is_not') q = q.neq('value', value);
-        else q = q.ilike('value', `%${value}%`);
-        const { data } = await q;
-        baseIds = new Set((data ?? []).map((r) => r.contact_id));
-      } else if (
-        audience.type === 'csv' &&
-        audience.csvContacts &&
-        audience.csvContacts.length > 0
-      ) {
-        setEstimatedCount(audience.csvContacts.length);
-        return;
-      } else {
-        // Partially-configured audience — wait for the user to finish.
-        setEstimatedCount(null);
-        return;
-      }
-
-      // Apply exclude tags
-      let excludeSet: Set<string> | null = null;
-      if (audience.excludeTagIds && audience.excludeTagIds.length > 0) {
-        const { data: excludeRows } = await supabase
-          .from('contact_tags')
-          .select('contact_id')
-          .in('tag_id', audience.excludeTagIds);
-        excludeSet = new Set((excludeRows ?? []).map((r) => r.contact_id));
-      }
-
-      if (baseIds) {
-        const effective = [...baseIds].filter(
-          (id) => !excludeSet?.has(id),
-        );
-        setEstimatedCount(effective.length);
-      } else {
-        // "All" — fetch the total, then subtract exclude set if any.
-        const { count } = await supabase
+      let count: number;
+      if (plainAll) {
+        // Everyone, nothing to subtract: a head count is enough.
+        const { count: total } = await supabase
           .from('contacts')
           .select('*', { count: 'exact', head: true });
-        const total = count ?? 0;
-        setEstimatedCount(excludeSet ? Math.max(0, total - excludeSet.size) : total);
+        count = total ?? 0;
+      } else {
+        const ids = await resolveAudienceContactIds(supabase, audience);
+        count = ids ? ids.size : 0;
       }
+      if (isCurrent()) setEstimatedCount(count);
+    } catch {
+      if (isCurrent()) setEstimatedCount(null);
     } finally {
-      setLoadingCount(false);
+      if (isCurrent()) setLoadingCount(false);
     }
-  }, [
-    audience.type,
-    audience.tagIds,
-    audience.customField,
-    audience.csvContacts,
-    audience.excludeTagIds,
-  ]);
+  }, [audience]);
 
   useEffect(() => {
     fetchEstimatedCount();
@@ -227,6 +204,22 @@ export function Step2SelectAudience({
       ? current.filter((id) => id !== tagId)
       : [...current, tagId];
     onUpdate({ ...audience, excludeTagIds: updated });
+  }
+
+  function setRecencyDays(days: number | null) {
+    if (days === null) {
+      onUpdate({ ...audience, recency: null });
+      return;
+    }
+    onUpdate({
+      ...audience,
+      recency: { days, basis: audience.recency?.basis ?? 'created' },
+    });
+  }
+
+  function setRecencyBasis(basis: RecencyBasis) {
+    if (!audience.recency) return;
+    onUpdate({ ...audience, recency: { ...audience.recency, basis } });
   }
 
   function updateCustomField(patch: Partial<CustomFieldFilter>) {
@@ -386,6 +379,72 @@ export function Step2SelectAudience({
                 placeholder={t('selectAudience.valuePlaceholder')}
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Date window — narrows any contact-based audience to recent contacts */}
+      {audience.type !== 'csv' && (
+        <div className="rounded-xl border border-border bg-card/50 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <CalendarRange className="h-4 w-4 text-primary" />
+            <p className="text-sm font-medium text-foreground">
+              {t('selectAudience.recencyTitle')}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[null, ...RECENCY_PRESET_DAYS].map((days) => {
+              const selected = (audience.recency?.days ?? null) === days;
+              return (
+                <button
+                  key={days ?? 'none'}
+                  type="button"
+                  onClick={() => setRecencyDays(days)}
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                    selected
+                      ? 'border-primary/30 bg-primary/10 text-primary'
+                      : 'border-border bg-muted text-muted-foreground hover:border-border'
+                  }`}
+                >
+                  {days === null
+                    ? t('selectAudience.recencyNone')
+                    : t('selectAudience.recencyDays', { count: days })}
+                </button>
+              );
+            })}
+          </div>
+          {audience.recency && (
+            <div className="mt-4 space-y-2">
+              {(['created', 'activity'] as const).map((basis) => {
+                const selected = audience.recency?.basis === basis;
+                return (
+                  <button
+                    key={basis}
+                    type="button"
+                    onClick={() => setRecencyBasis(basis)}
+                    className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left text-xs transition-all ${
+                      selected
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                        : 'border-border bg-muted/40 hover:border-border'
+                    }`}
+                  >
+                    <span
+                      className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border ${
+                        selected ? 'border-primary bg-primary' : 'border-muted-foreground'
+                      }`}
+                    />
+                    <span>
+                      <span className="block font-medium text-foreground">
+                        {t(`selectAudience.recencyBasis.${basis}`)}
+                      </span>
+                      <span className="mt-0.5 block text-muted-foreground">
+                        {t(`selectAudience.recencyBasisDesc.${basis}`)}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
