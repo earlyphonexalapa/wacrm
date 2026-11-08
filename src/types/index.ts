@@ -325,6 +325,25 @@ export interface WhatsAppConfig {
    * placeholder.
    */
   capi_access_token?: string | null;
+  /**
+   * True when the number is connected through Embedded Signup and is also
+   * still used from the WhatsApp Business app on the phone ("coexistence").
+   * Migration 060.
+   */
+  coexistence?: boolean;
+  coexistence_onboarded_at?: string | null;
+  contacts_sync_requested_at?: string | null;
+  history_sync_requested_at?: string | null;
+  /** Where the phone's chat-history import stands. Migration 060. */
+  history_sync_status?:
+    | 'none'
+    | 'requested'
+    | 'in_progress'
+    | 'complete'
+    | 'declined'
+    | 'failed';
+  /** 0-100, as Meta reports it while the history arrives in chunks. */
+  history_sync_progress?: number | null;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)

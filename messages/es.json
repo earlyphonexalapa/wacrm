@@ -1639,7 +1639,40 @@
       "capiAccessTokenPlaceholder": "Pega el token de acceso generado para este dataset",
       "capiTokenHidden": "El token está oculto por seguridad. Vuelve a escribirlo para cambiarlo — si lo dejas así se conserva el guardado.",
       "capiHint": "Necesitas un <strong class=\"text-foreground\">Dataset</strong> en el Events Manager de Meta vinculado a la cuenta de WhatsApp Business de arriba, además de un token de acceso generado para ese dataset (Events Manager → Configuración → Conversions API). Solo los contactos que llegaron desde un anuncio de clic a WhatsApp traen el ID de clic necesario para atribuir — las conversaciones que empezaron de otra forma se omiten automáticamente.",
-      "capiDocs": "Documentación de la Conversions API para WhatsApp"
+      "capiDocs": "Documentación de la Conversions API para WhatsApp",
+      "coexistence": {
+        "title": "Conectar con WhatsApp Business (coexistencia)",
+        "description": "Usa el mismo número en la app WhatsApp Business de tu celular y en el CRM al mismo tiempo. Lo que escribas desde el celular también aparece aquí.",
+        "connect": "Conectar mi número",
+        "reconnect": "Volver a conectar",
+        "connecting": "Abriendo Meta…",
+        "saving": "Guardando la conexión…",
+        "req1": "Necesitas la app WhatsApp Business, versión 2.24.17 o superior, en tu celular.",
+        "req2": "Ten el celular a la mano: Meta mostrará un código QR para escanear.",
+        "req3": "Mantén abierta la app WhatsApp Business hasta que termine la sincronización.",
+        "replaceWarning": "Esto reemplaza la conexión actual de WhatsApp de esta cuenta.",
+        "notConfiguredTitle": "Falta configurar Meta en el servidor",
+        "notConfiguredBody": "Agrega estas variables de entorno en tu hosting y vuelve a desplegar: {vars}. La guía paso a paso está en docs/whatsapp-coexistence.md.",
+        "connectedTitle": "Conectado por coexistencia",
+        "connectedBody": "Tu número funciona a la vez en el celular y en el CRM.",
+        "disconnectedTitle": "Desconectado",
+        "disconnectedBody": "Meta avisó que este número se desconectó (por ejemplo, desde la app del celular o por inactividad). Vuelve a conectarlo.",
+        "historyLabel": "Historial de chats",
+        "history": {
+          "none": "no solicitado",
+          "requested": "solicitado, esperando a Meta",
+          "in_progress": "sincronizando… {progress}%",
+          "complete": "completo",
+          "declined": "rechazado desde la app del celular",
+          "failed": "falló"
+        },
+        "limits": "Con coexistencia, en la app del celular no funcionan los mensajes temporales, ver una vez, ubicación en vivo ni las listas de difusión en chats 1 a 1, y WhatsApp para Windows no es compatible. La velocidad de envío queda fija en 20 mensajes por segundo.",
+        "success": "WhatsApp conectado. Sincronizando contactos e historial…",
+        "cancelled": "Conexión cancelada.",
+        "metaError": "Meta devolvió un error: {message}",
+        "saveFailed": "No se pudo completar la conexión.",
+        "sdkFailed": "No se pudo cargar el inicio de sesión de Meta. Revisa tu conexión o desactiva el bloqueador de anuncios."
+      }
     },
     "sections": {
       "overview": "Resumen",

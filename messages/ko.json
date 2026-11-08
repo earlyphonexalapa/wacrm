@@ -1639,7 +1639,40 @@
       "capiAccessTokenPlaceholder": "이 데이터셋용으로 생성한 액세스 토큰을 붙여넣으세요",
       "capiTokenHidden": "보안을 위해 토큰이 숨겨져 있습니다. 변경하려면 다시 입력하세요 — 그대로 두면 저장된 값이 유지됩니다.",
       "capiHint": "위의 왓츠앱 비즈니스 계정과 연결된 Meta 이벤트 관리자의 <strong class=\"text-foreground\">데이터셋</strong>과, 해당 데이터셋용으로 생성한 액세스 토큰(이벤트 관리자 → 설정 → Conversions API)이 필요합니다. 클릭 투 왓츠앱 광고를 통해 유입된 연락처만 어트리뷰션에 필요한 클릭 ID를 가지고 있으며, 다른 방식으로 시작된 대화는 자동으로 건너뜁니다.",
-      "capiDocs": "왓츠앱용 Conversions API 문서"
+      "capiDocs": "왓츠앱용 Conversions API 문서",
+      "coexistence": {
+        "title": "WhatsApp Business 연결 (공존 모드)",
+        "description": "휴대폰의 WhatsApp Business 앱과 CRM에서 같은 번호를 동시에 사용합니다. 휴대폰에서 보낸 메시지도 여기에 표시됩니다.",
+        "connect": "내 번호 연결",
+        "reconnect": "다시 연결",
+        "connecting": "Meta 여는 중…",
+        "saving": "연결 저장 중…",
+        "req1": "휴대폰에 WhatsApp Business 앱 2.24.17 이상이 필요합니다.",
+        "req2": "휴대폰을 가까이 두세요. Meta가 스캔할 QR 코드를 표시합니다.",
+        "req3": "동기화가 끝날 때까지 WhatsApp Business 앱을 열어 두세요.",
+        "replaceWarning": "이 계정의 현재 WhatsApp 연결을 대체합니다.",
+        "notConfiguredTitle": "서버에 Meta 설정이 필요합니다",
+        "notConfiguredBody": "호스팅에 다음 환경 변수를 추가하고 다시 배포하세요: {vars}. 단계별 안내는 docs/whatsapp-coexistence.md에 있습니다.",
+        "connectedTitle": "공존 모드로 연결됨",
+        "connectedBody": "번호가 휴대폰과 CRM에서 동시에 작동합니다.",
+        "disconnectedTitle": "연결 끊김",
+        "disconnectedBody": "Meta가 이 번호의 연결이 끊겼다고 알렸습니다(예: 휴대폰 앱에서 해제했거나 장기간 미사용). 다시 연결하세요.",
+        "historyLabel": "채팅 기록",
+        "history": {
+          "none": "요청 안 함",
+          "requested": "요청됨, Meta 응답 대기 중",
+          "in_progress": "동기화 중… {progress}%",
+          "complete": "완료",
+          "declined": "휴대폰 앱에서 거부됨",
+          "failed": "실패"
+        },
+        "limits": "공존 모드에서는 휴대폰 앱의 1:1 채팅에서 사라지는 메시지, 한 번만 보기, 실시간 위치, 브로드캐스트 목록이 작동하지 않으며 Windows용 WhatsApp은 지원되지 않습니다. 전송 속도는 초당 20개로 고정됩니다.",
+        "success": "WhatsApp이 연결되었습니다. 연락처와 기록을 동기화하는 중…",
+        "cancelled": "연결이 취소되었습니다.",
+        "metaError": "Meta 오류: {message}",
+        "saveFailed": "연결을 완료하지 못했습니다.",
+        "sdkFailed": "Meta 로그인을 불러오지 못했습니다. 연결을 확인하거나 광고 차단기를 끄세요."
+      }
     },
     "sections": {
       "overview": "개요",

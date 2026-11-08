@@ -18,6 +18,11 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import {
+  handleCoexistenceChange,
+  isCoexistenceWebhookField,
+  type EchoMessage,
+} from '@/lib/whatsapp/coexistence-webhook'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -252,6 +257,40 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         await handleTemplateWebhookChange(
           { field: change.field, value: change.value as unknown },
           supabaseAdmin(),
+        )
+        continue
+      }
+
+      // WhatsApp Business app coexistence: messages the owner typed on the
+      // phone, the phone's contacts and chat history, and the number being
+      // disconnected. They carry no customer message to react to, so they
+      // are handled on their own and never reach the inbound pipeline below.
+      if (isCoexistenceWebhookField(change.field)) {
+        await handleCoexistenceChange(
+          { field: change.field, value: change.value as unknown },
+          {
+            db: supabaseAdmin(),
+            // An echoed photo or voice note gets the same download-and-mirror
+            // treatment as one a customer sends.
+            parseEchoContent: async (echo: EchoMessage, cfg) => {
+              const { data: row } = await supabaseAdmin()
+                .from('whatsapp_config')
+                .select('access_token, mirror_inbound_media')
+                .eq('account_id', cfg.account_id)
+                .maybeSingle()
+              if (!row) throw new Error('no whatsapp_config row')
+              const parsed = await parseMessageContent(
+                { ...echo, from: echo.to ?? '' } as WhatsAppMessage,
+                decrypt(row.access_token),
+                row.mirror_inbound_media !== false ? { accountId: cfg.account_id } : null
+              )
+              return {
+                contentText: parsed.contentText,
+                mediaUrl: parsed.mediaUrl,
+                mediaType: parsed.mediaType,
+              }
+            },
+          }
         )
         continue
       }

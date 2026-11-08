@@ -1639,7 +1639,40 @@
       "capiAccessTokenPlaceholder": "Paste the access token generated for this dataset",
       "capiTokenHidden": "The token is hidden for security. Re-enter it to change it — leaving it as-is keeps the stored one.",
       "capiHint": "Needs a <strong class=\"text-foreground\">Dataset</strong> in Meta Events Manager linked to the WhatsApp Business Account above, plus an access token generated for that dataset (Events Manager → Settings → Conversions API). Only contacts that arrived via a click-to-WhatsApp ad carry the click ID needed to attribute — chats that started any other way are skipped automatically.",
-      "capiDocs": "Conversions API for WhatsApp docs"
+      "capiDocs": "Conversions API for WhatsApp docs",
+      "coexistence": {
+        "title": "Connect WhatsApp Business (coexistence)",
+        "description": "Use the same number in the WhatsApp Business app on your phone and in the CRM at the same time. What you type on the phone shows up here too.",
+        "connect": "Connect my number",
+        "reconnect": "Reconnect",
+        "connecting": "Opening Meta…",
+        "saving": "Saving the connection…",
+        "req1": "You need the WhatsApp Business app, version 2.24.17 or later, on your phone.",
+        "req2": "Keep your phone at hand: Meta will show a QR code to scan.",
+        "req3": "Keep the WhatsApp Business app open until the sync finishes.",
+        "replaceWarning": "This replaces this account's current WhatsApp connection.",
+        "notConfiguredTitle": "Meta is not set up on the server",
+        "notConfiguredBody": "Add these environment variables in your hosting and redeploy: {vars}. The step-by-step guide is in docs/whatsapp-coexistence.md.",
+        "connectedTitle": "Connected through coexistence",
+        "connectedBody": "Your number works on the phone and in the CRM at once.",
+        "disconnectedTitle": "Disconnected",
+        "disconnectedBody": "Meta reported that this number was disconnected (for example from the phone app, or after inactivity). Connect it again.",
+        "historyLabel": "Chat history",
+        "history": {
+          "none": "not requested",
+          "requested": "requested, waiting for Meta",
+          "in_progress": "syncing… {progress}%",
+          "complete": "complete",
+          "declined": "declined from the phone app",
+          "failed": "failed"
+        },
+        "limits": "With coexistence, disappearing messages, view-once, live location and broadcast lists stop working in 1:1 chats on the phone app, and WhatsApp for Windows is not supported. Sending speed is fixed at 20 messages per second.",
+        "success": "WhatsApp connected. Syncing contacts and history…",
+        "cancelled": "Connection cancelled.",
+        "metaError": "Meta returned an error: {message}",
+        "saveFailed": "Could not complete the connection.",
+        "sdkFailed": "Could not load Meta login. Check your connection or turn off your ad blocker."
+      }
     },
     "sections": {
       "overview": "Overview",

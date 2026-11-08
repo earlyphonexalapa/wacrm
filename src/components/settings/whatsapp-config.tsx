@@ -25,6 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { SettingsPanelHead } from './settings-panel-head';
+import { WhatsAppCoexistenceCard } from './whatsapp-coexistence-card';
 import {
   Accordion,
   AccordionItem,
@@ -504,6 +505,19 @@ export function WhatsAppConfig() {
               </div>
             </div>
           </Alert>
+        )}
+
+        {/* Connect the number through Meta's Embedded Signup (coexistence) */}
+        {canEditSettings && (
+          <WhatsAppCoexistenceCard
+            config={config}
+            onConnected={async () => {
+              if (accountId) {
+                loadedAccountIdRef.current = accountId;
+                await fetchConfig(accountId);
+              }
+            }}
+          />
         )}
 
         {/* Connection Status */}
