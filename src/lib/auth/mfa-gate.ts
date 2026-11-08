@@ -108,6 +108,8 @@ export function isMfaExemptPath(pathname: string): boolean {
   if (pathname === '/auth/callback') return true
   if (pathname === '/icon' || pathname === '/robots.txt' || pathname === '/sitemap.xml') return true
   if (pathname.startsWith('/join/')) return true
+  // Public legal page that Meta requires for an app that uses WhatsApp.
+  if (pathname === '/privacidad') return true
   if (pathname.startsWith('/api/auth/2fa/')) return true
   if (pathname.startsWith('/api/whatsapp/webhook')) return true
   if (pathname.startsWith('/api/v1/')) return true

@@ -102,6 +102,7 @@ describe('isMfaExemptPath', () => {
       '/signup',
       '/forgot-password',
       '/join/abc',
+      '/privacidad',
       '/api/auth/2fa/verify',
       '/api/whatsapp/webhook',
       '/api/v1/contacts',
