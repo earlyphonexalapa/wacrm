@@ -679,3 +679,22 @@ describe('inbound webhook: after() awaits automations (#368)', () => {
     expect(h.state.automationCompleted).toBe(3)
   })
 })
+
+describe('GET webhook verification with META_WEBHOOK_VERIFY_TOKEN', () => {
+  const verify = async (token: string) => {
+    const { GET } = await import('./route')
+    return GET(
+      new Request(
+        `http://localhost/api/whatsapp/webhook?hub.mode=subscribe&hub.challenge=abc123&hub.verify_token=${token}`,
+      ),
+    ) as unknown as Response
+  }
+
+  it('answers the challenge when the token matches the deployment token', async () => {
+    vi.stubEnv('META_WEBHOOK_VERIFY_TOKEN', 'my-deploy-token')
+    const res = await verify('my-deploy-token')
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('abc123')
+    vi.unstubAllEnvs()
+  })
+})

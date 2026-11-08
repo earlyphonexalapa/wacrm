@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
@@ -127,6 +128,21 @@ export async function GET(request: Request) {
         { error: 'Missing verification parameters' },
         { status: 400 }
       )
+    }
+
+    // A deployment-wide verify token. Meta checks the callback URL when it is
+    // first saved in the app dashboard — before any number is connected, so
+    // before any whatsapp_config row exists to hold a token. Without this, a
+    // brand-new Meta app could never get past "Verify and Save".
+    const envToken = process.env.META_WEBHOOK_VERIFY_TOKEN?.trim()
+    if (envToken && verifyToken.length === envToken.length) {
+      const equal = crypto.timingSafeEqual(Buffer.from(verifyToken), Buffer.from(envToken))
+      if (equal) {
+        return new Response(challenge, {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain' },
+        })
+      }
     }
 
     // Fetch all whatsapp configs to check verify tokens
